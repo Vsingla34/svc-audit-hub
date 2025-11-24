@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { AssignmentCard } from '@/components/AssignmentCard';
-import { LogOut, Briefcase, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { LogOut, Briefcase, Clock, CheckCircle, AlertCircle, DollarSign, ArrowLeft } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -126,11 +126,24 @@ export default function AuditorDashboard() {
       {/* Header */}
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-primary">Auditor Dashboard</h1>
-          <Button variant="outline" onClick={signOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign Out
-          </Button>
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-2xl font-bold text-primary">Auditor Dashboard</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            {kycStatus === 'approved' && (
+              <Button variant="outline" onClick={() => navigate('/payments')}>
+                <DollarSign className="h-4 w-4 mr-2" />
+                Payments
+              </Button>
+            )}
+            <Button variant="outline" onClick={signOut}>
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
         </div>
       </header>
 
