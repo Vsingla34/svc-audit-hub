@@ -199,6 +199,81 @@ export type Database = {
           },
         ]
       }
+      invoices: {
+        Row: {
+          assignment_id: string
+          auditor_id: string
+          base_amount: number
+          created_at: string
+          id: string
+          invoice_date: string
+          invoice_number: string
+          net_payable: number
+          ope_amount: number | null
+          payment_date: string | null
+          payment_reference: string | null
+          payment_remarks: string | null
+          payment_status: string
+          tds_amount: number
+          tds_rate: number | null
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          auditor_id: string
+          base_amount: number
+          created_at?: string
+          id?: string
+          invoice_date?: string
+          invoice_number: string
+          net_payable: number
+          ope_amount?: number | null
+          payment_date?: string | null
+          payment_reference?: string | null
+          payment_remarks?: string | null
+          payment_status?: string
+          tds_amount: number
+          tds_rate?: number | null
+          total_amount: number
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          auditor_id?: string
+          base_amount?: number
+          created_at?: string
+          id?: string
+          invoice_date?: string
+          invoice_number?: string
+          net_payable?: number
+          ope_amount?: number | null
+          payment_date?: string | null
+          payment_reference?: string | null
+          payment_remarks?: string | null
+          payment_status?: string
+          tds_amount?: number
+          tds_rate?: number | null
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_auditor_id_fkey"
+            columns: ["auditor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string | null
