@@ -16,6 +16,7 @@ export default function AdminDashboard() {
   const { signOut, user } = useAuth();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [pendingKyc, setPendingKyc] = useState<any[]>([]);
   const [stats, setStats] = useState({
     total: 0,
     open: 0,
@@ -76,6 +77,19 @@ export default function AdminDashboard() {
 
       if (applicationsError) throw applicationsError;
       setApplications(applicationsData || []);
+
+      // Fetch pending KYC
+      const { data: kycData, error: kycError } = await supabase
+        .from('auditor_profiles')
+        .select(`
+          *,
+          profile:profiles(full_name, email)
+        `)
+        .eq('kyc_status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (kycError) throw kycError;
+      setPendingKyc(kycData || []);
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -111,6 +125,22 @@ export default function AdminDashboard() {
         fees: '',
         ope: '',
       });
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleKycApproval = async (userId: string, status: 'approved' | 'rejected') => {
+    try {
+      const { error } = await supabase
+        .from('auditor_profiles')
+        .update({ kyc_status: status })
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      toast.success(`KYC ${status} successfully!`);
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
@@ -350,6 +380,66 @@ export default function AdminDashboard() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Pending KYC Approvals */}
+        {pendingKyc.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Pending KYC Approvals</CardTitle>
+              <CardDescription>Review and approve auditor registrations</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Qualifications</TableHead>
+                    <TableHead>Experience</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingKyc.map((kyc) => (
+                    <TableRow key={kyc.id}>
+                      <TableCell className="font-medium">{kyc.profile?.full_name}</TableCell>
+                      <TableCell>{kyc.profile?.email}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {kyc.qualifications?.map((q: string) => (
+                            <span key={q} className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs">
+                              {q}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>{kyc.experience_years} years</TableCell>
+                      <TableCell>{kyc.base_city}, {kyc.base_state}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleKycApproval(kyc.user_id, 'approved')}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleKycApproval(kyc.user_id, 'rejected')}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Pending Applications */}
         {applications.length > 0 && (
