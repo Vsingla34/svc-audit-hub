@@ -6,19 +6,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { AssignmentCard } from '@/components/AssignmentCard';
-import { LogOut, Briefcase, Clock, CheckCircle } from 'lucide-react';
+import { LogOut, Briefcase, Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
+import { useNavigate } from 'react-router-dom';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function AuditorDashboard() {
   const { signOut, user } = useAuth();
+  const navigate = useNavigate();
   const [openAssignments, setOpenAssignments] = useState<any[]>([]);
   const [myApplications, setMyApplications] = useState<any[]>([]);
   const [myAssignments, setMyAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [kycStatus, setKycStatus] = useState<string | null>(null);
 
   useEffect(() => {
+    checkKycStatus();
     fetchData();
   }, [user]);
+
+  const checkKycStatus = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from('auditor_profiles')
+      .select('kyc_status')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    setKycStatus(data?.kyc_status || null);
+  };
 
   const fetchData = async () => {
     try {
@@ -62,6 +79,12 @@ export default function AuditorDashboard() {
   };
 
   const handleApply = async (assignmentId: string) => {
+    // Check KYC status before allowing application
+    if (kycStatus !== 'approved') {
+      toast.error('Please complete KYC verification before applying');
+      return;
+    }
+
     try {
       // Check if already applied
       const existingApplication = myApplications.find(
@@ -112,6 +135,41 @@ export default function AuditorDashboard() {
       </header>
 
       <main className="container mx-auto px-4 py-8 space-y-8">
+        {/* KYC Status Alert */}
+        {(!kycStatus || kycStatus === 'pending') && (
+          <Alert variant={!kycStatus ? 'destructive' : 'default'}>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>
+              {!kycStatus ? 'Complete Your Profile' : 'KYC Under Review'}
+            </AlertTitle>
+            <AlertDescription className="flex items-center justify-between">
+              <span>
+                {!kycStatus 
+                  ? 'Complete your auditor profile to apply for assignments'
+                  : 'Your profile is under admin review. You can apply once approved.'}
+              </span>
+              {!kycStatus && (
+                <Button size="sm" onClick={() => navigate('/profile-setup')}>
+                  Complete Profile
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {kycStatus === 'rejected' && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>KYC Rejected</AlertTitle>
+            <AlertDescription className="flex items-center justify-between">
+              <span>Your KYC was rejected. Please update your profile and resubmit.</span>
+              <Button size="sm" variant="outline" onClick={() => navigate('/profile-setup')}>
+                Update Profile
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
