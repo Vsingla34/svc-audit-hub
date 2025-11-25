@@ -9,6 +9,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import AuditorProfileSetup from "./pages/AuditorProfileSetup";
 import PaymentsDashboard from "./pages/PaymentsDashboard";
+import MapView from "./pages/MapView";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile-setup" element={<AuditorProfileSetup />} />
             <Route path="/payments" element={<PaymentsDashboard />} />
+            <Route path="/map" element={<MapView />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

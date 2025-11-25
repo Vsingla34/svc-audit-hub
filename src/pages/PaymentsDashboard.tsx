@@ -143,6 +143,30 @@ export default function PaymentsDashboard() {
 
       if (error) throw error;
 
+      // Get invoice and auditor details for email
+      const { data: invoice } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          auditor:profiles(email, full_name)
+        `)
+        .eq('id', invoiceId)
+        .single();
+
+      // Send payment notification email
+      if (invoice && invoice.auditor) {
+        await supabase.functions.invoke('send-payment-notification', {
+          body: {
+            to: invoice.auditor.email,
+            auditorName: invoice.auditor.full_name,
+            invoiceNumber: invoice.invoice_number,
+            amount: invoice.net_payable,
+            status,
+            paymentDate: updateData.payment_date,
+          },
+        });
+      }
+
       toast.success(`Payment status updated to ${status}`);
       setPaymentDialog({ open: false, invoice: null });
       fetchData();
@@ -210,7 +234,7 @@ export default function PaymentsDashboard() {
               <CardDescription>Total Amount</CardDescription>
               <CardTitle className="text-3xl flex items-center gap-2">
                 <DollarSign className="h-6 w-6 text-primary" />
-                ₹{stats.totalAmount.toLocaleString()}
+                ₹{stats.totalAmount.toLocaleString('en-IN')}
               </CardTitle>
             </CardHeader>
           </Card>
@@ -231,7 +255,7 @@ export default function PaymentsDashboard() {
                       <h3 className="font-medium">{assignment.client_name}</h3>
                       <p className="text-sm text-muted-foreground">{assignment.branch_name}</p>
                       <p className="text-sm font-semibold text-primary mt-1">
-                        Fees: ₹{assignment.fees.toLocaleString()} + OPE: ₹{(assignment.ope || 0).toLocaleString()}
+                        Fees: ₹{assignment.fees.toLocaleString('en-IN')} + OPE: ₹{(assignment.ope || 0).toLocaleString('en-IN')}
                       </p>
                     </div>
                     <Button onClick={() => handleCreateInvoice(assignment)}>
@@ -283,10 +307,10 @@ export default function PaymentsDashboard() {
                         <div className="text-sm text-muted-foreground">{invoice.assignment?.branch_name}</div>
                       </div>
                     </TableCell>
-                    <TableCell>{new Date(invoice.invoice_date).toLocaleDateString()}</TableCell>
-                    <TableCell>₹{Number(invoice.total_amount).toLocaleString()}</TableCell>
-                    <TableCell>₹{Number(invoice.tds_amount).toLocaleString()}</TableCell>
-                    <TableCell className="font-semibold">₹{Number(invoice.net_payable).toLocaleString()}</TableCell>
+                    <TableCell>{new Date(invoice.invoice_date).toLocaleDateString('en-IN')}</TableCell>
+                    <TableCell>₹{Number(invoice.total_amount).toLocaleString('en-IN')}</TableCell>
+                    <TableCell>₹{Number(invoice.tds_amount).toLocaleString('en-IN')}</TableCell>
+                    <TableCell className="font-semibold">₹{Number(invoice.net_payable).toLocaleString('en-IN')}</TableCell>
                     <TableCell>
                       <StatusBadge status={invoice.payment_status} />
                     </TableCell>
@@ -320,7 +344,7 @@ export default function PaymentsDashboard() {
             <div>
               <Label>Invoice: {paymentDialog.invoice?.invoice_number}</Label>
               <p className="text-sm text-muted-foreground">
-                Amount: ₹{Number(paymentDialog.invoice?.net_payable || 0).toLocaleString()}
+                Amount: ₹{Number(paymentDialog.invoice?.net_payable || 0).toLocaleString('en-IN')}
               </p>
             </div>
             <div className="space-y-2">

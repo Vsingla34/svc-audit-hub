@@ -54,7 +54,7 @@ export const AssignmentCard = ({
         </div>
         <div className="flex items-center gap-2 text-sm font-semibold text-primary">
           <DollarSign className="h-4 w-4" />
-          <span>₹{assignment.fees.toLocaleString()}</span>
+          <span>₹{assignment.fees.toLocaleString('en-IN')}</span>
         </div>
       </CardContent>
       {(showApplyButton || showDetailsButton) && (
