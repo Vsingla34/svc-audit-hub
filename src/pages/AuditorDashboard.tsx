@@ -110,6 +110,23 @@ export default function AuditorDashboard() {
     }
   };
 
+  const handleDeleteApplication = async (applicationId: string) => {
+    if (!confirm('Are you sure you want to delete this application?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', applicationId);
+
+      if (error) throw error;
+      toast.success('Application deleted successfully!');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -269,11 +286,23 @@ export default function AuditorDashboard() {
                         <StatusBadge status={app.status} />
                       </div>
                     </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      <div>Location: {app.assignment.city}, {app.assignment.state}</div>
-                      <div>Applied: {new Date(app.applied_at).toLocaleDateString()}</div>
-                      <div>Audit Date: {new Date(app.assignment.audit_date).toLocaleDateString()}</div>
-                      <div className="font-semibold text-primary mt-2">Fees: ₹{app.assignment.fees.toLocaleString()}</div>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div>Location: {app.assignment.city}, {app.assignment.state}</div>
+                        <div>Applied: {new Date(app.applied_at).toLocaleDateString('en-IN')}</div>
+                        <div>Audit Date: {new Date(app.assignment.audit_date).toLocaleDateString('en-IN')}</div>
+                        <div className="font-semibold text-primary mt-2">Fees: ₹{app.assignment.fees.toLocaleString('en-IN')}</div>
+                      </div>
+                      {app.status === 'pending' && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="mt-4"
+                          onClick={() => handleDeleteApplication(app.id)}
+                        >
+                          Delete Application
+                        </Button>
+                      )}
                     </CardContent>
                   </Card>
                 ))}

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft } from 'lucide-react';
+import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft, MapPin } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { useNavigate } from 'react-router-dom';
 
@@ -152,6 +152,19 @@ export default function AdminDashboard() {
 
   const handleAllotAssignment = async (applicationId: string, assignmentId: string, auditorId: string) => {
     try {
+      // Get assignment and auditor details
+      const { data: assignment } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('id', assignmentId)
+        .single();
+
+      const { data: auditor } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', auditorId)
+        .single();
+
       // Update assignment
       const { error: assignmentError } = await supabase
         .from('assignments')
@@ -175,7 +188,59 @@ export default function AdminDashboard() {
         .eq('assignment_id', assignmentId)
         .neq('id', applicationId);
 
+      // Send email notification
+      if (assignment && auditor) {
+        await supabase.functions.invoke('send-assignment-notification', {
+          body: {
+            to: auditor.email,
+            auditorName: auditor.full_name,
+            assignmentDetails: {
+              clientName: assignment.client_name,
+              branchName: assignment.branch_name,
+              city: assignment.city,
+              state: assignment.state,
+              auditDate: assignment.audit_date,
+              fees: assignment.fees,
+            },
+          },
+        });
+      }
+
       toast.success('Assignment allotted successfully!');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    if (!confirm('Are you sure you want to delete this assignment?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .delete()
+        .eq('id', assignmentId);
+
+      if (error) throw error;
+      toast.success('Assignment deleted successfully!');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleDeleteApplication = async (applicationId: string) => {
+    if (!confirm('Are you sure you want to delete this application?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', applicationId);
+
+      if (error) throw error;
+      toast.success('Application deleted successfully!');
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
@@ -208,6 +273,10 @@ export default function AdminDashboard() {
             <Button variant="outline" onClick={() => navigate('/payments')}>
               <DollarSign className="h-4 w-4 mr-2" />
               Payments
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/map')}>
+              <MapPin className="h-4 w-4 mr-2" />
+              Map View
             </Button>
             <Button variant="outline" onClick={signOut}>
               <LogOut className="h-4 w-4 mr-2" />
@@ -473,7 +542,7 @@ export default function AdminDashboard() {
                     <TableHead>Assignment</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Applied</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -492,14 +561,23 @@ export default function AdminDashboard() {
                         </div>
                       </TableCell>
                       <TableCell>{app.assignment?.city}, {app.assignment?.state}</TableCell>
-                      <TableCell>{new Date(app.applied_at).toLocaleDateString()}</TableCell>
+                      <TableCell>{new Date(app.applied_at).toLocaleDateString('en-IN')}</TableCell>
                       <TableCell>
-                        <Button
-                          size="sm"
-                          onClick={() => handleAllotAssignment(app.id, app.assignment_id, app.auditor_id)}
-                        >
-                          Allot
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleAllotAssignment(app.id, app.assignment_id, app.auditor_id)}
+                          >
+                            Allot
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeleteApplication(app.id)}
+                          >
+                            Delete
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -526,6 +604,7 @@ export default function AdminDashboard() {
                   <TableHead>Date</TableHead>
                   <TableHead>Fees</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -535,10 +614,19 @@ export default function AdminDashboard() {
                     <TableCell>{assignment.branch_name}</TableCell>
                     <TableCell>{assignment.city}, {assignment.state}</TableCell>
                     <TableCell>{assignment.audit_type}</TableCell>
-                    <TableCell>{new Date(assignment.audit_date).toLocaleDateString()}</TableCell>
-                    <TableCell>₹{assignment.fees.toLocaleString()}</TableCell>
+                    <TableCell>{new Date(assignment.audit_date).toLocaleDateString('en-IN')}</TableCell>
+                    <TableCell>₹{assignment.fees.toLocaleString('en-IN')}</TableCell>
                     <TableCell>
                       <StatusBadge status={assignment.status} />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDeleteAssignment(assignment.id)}
+                      >
+                        Delete
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
