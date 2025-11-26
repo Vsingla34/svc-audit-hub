@@ -28,6 +28,8 @@ export default function AdminDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterState, setFilterState] = useState<string>('all');
   
   // Form state
   const [formData, setFormData] = useState({
@@ -86,7 +88,7 @@ export default function AdminDashboard() {
         .from('auditor_profiles')
         .select(`
           *,
-          profile:profiles(full_name, email)
+          profiles:user_id (full_name, email)
         `)
         .eq('kyc_status', 'pending')
         .order('created_at', { ascending: false });
@@ -128,6 +130,23 @@ export default function AdminDashboard() {
         fees: '',
         ope: '',
       });
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleRejectKyc = async (auditorId: string) => {
+    if (!confirm('Are you sure you want to reject this KYC?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('auditor_profiles')
+        .update({ kyc_status: 'rejected' })
+        .eq('user_id', auditorId);
+
+      if (error) throw error;
+      toast.success('KYC rejected successfully');
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
@@ -230,6 +249,42 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleChangeAllocation = async (assignmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .update({ 
+          allotted_to: null, 
+          status: 'open' 
+        })
+        .eq('id', assignmentId);
+
+      if (error) throw error;
+      toast.success('Allocation cleared. Assignment is now open for new applications.');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleCompleteAssignment = async (assignmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .update({ 
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', assignmentId);
+
+      if (error) throw error;
+      toast.success('Assignment marked as completed');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
   const handleDeleteApplication = async (applicationId: string) => {
     if (!confirm('Are you sure you want to delete this application?')) return;
     
@@ -246,6 +301,14 @@ export default function AdminDashboard() {
       toast.error(error.message);
     }
   };
+
+  const filteredAssignments = assignments.filter(assignment => {
+    if (filterStatus !== 'all' && assignment.status !== filterStatus) return false;
+    if (filterState !== 'all' && assignment.state !== filterState) return false;
+    return true;
+  });
+
+  const uniqueStates = [...new Set(assignments.map(a => a.state))];
 
   if (loading) {
     return (
@@ -467,6 +530,45 @@ export default function AdminDashboard() {
         <BulkUploadDialog userId={user?.id || ''} onSuccess={fetchData} />
         </div>
 
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="filterStatus">Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger id="filterStatus">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="allotted">Allotted</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="filterState">State</Label>
+                <Select value={filterState} onValueChange={setFilterState}>
+                  <SelectTrigger id="filterState">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All States</SelectItem>
+                    {uniqueStates.map(state => (
+                      <SelectItem key={state} value={state}>{state}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Pending KYC Approvals */}
         {pendingKyc.length > 0 && (
           <Card>
@@ -489,8 +591,8 @@ export default function AdminDashboard() {
                 <TableBody>
                   {pendingKyc.map((kyc) => (
                     <TableRow key={kyc.id}>
-                      <TableCell className="font-medium">{kyc.profile?.full_name}</TableCell>
-                      <TableCell>{kyc.profile?.email}</TableCell>
+                      <TableCell className="font-medium">{kyc.profiles?.full_name || 'N/A'}</TableCell>
+                      <TableCell>{kyc.profiles?.email || 'N/A'}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {kyc.qualifications?.map((q: string) => (
@@ -513,7 +615,7 @@ export default function AdminDashboard() {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => handleKycApproval(kyc.user_id, 'rejected')}
+                            onClick={() => handleRejectKyc(kyc.user_id)}
                           >
                             Reject
                           </Button>
@@ -541,6 +643,7 @@ export default function AdminDashboard() {
                     <TableHead>Auditor</TableHead>
                     <TableHead>Assignment</TableHead>
                     <TableHead>Location</TableHead>
+                    <TableHead>Bid Amount</TableHead>
                     <TableHead>Applied</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -561,6 +664,7 @@ export default function AdminDashboard() {
                         </div>
                       </TableCell>
                       <TableCell>{app.assignment?.city}, {app.assignment?.state}</TableCell>
+                      <TableCell className="font-semibold">₹{app.bid_amount?.toLocaleString('en-IN') || 0}</TableCell>
                       <TableCell>{new Date(app.applied_at).toLocaleDateString('en-IN')}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -608,7 +712,7 @@ export default function AdminDashboard() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {assignments.map((assignment) => (
+                {filteredAssignments.map((assignment) => (
                   <TableRow key={assignment.id}>
                     <TableCell className="font-medium">{assignment.client_name}</TableCell>
                     <TableCell>{assignment.branch_name}</TableCell>
@@ -620,13 +724,40 @@ export default function AdminDashboard() {
                       <StatusBadge status={assignment.status} />
                     </TableCell>
                     <TableCell>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleDeleteAssignment(assignment.id)}
-                      >
-                        Delete
-                      </Button>
+                      <div className="flex gap-2">
+                        {assignment.status === 'allotted' && (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => handleChangeAllocation(assignment.id)}
+                            >
+                              Change
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleCompleteAssignment(assignment.id)}
+                            >
+                              Complete
+                            </Button>
+                          </>
+                        )}
+                        {assignment.status === 'completed' && assignment.report_url && (
+                          <Button
+                            size="sm"
+                            onClick={() => navigate('/payments')}
+                          >
+                            Pay
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDeleteAssignment(assignment.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

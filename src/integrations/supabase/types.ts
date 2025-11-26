@@ -19,6 +19,7 @@ export type Database = {
           applied_at: string | null
           assignment_id: string
           auditor_id: string
+          bid_amount: number | null
           id: string
           status: string | null
         }
@@ -26,6 +27,7 @@ export type Database = {
           applied_at?: string | null
           assignment_id: string
           auditor_id: string
+          bid_amount?: number | null
           id?: string
           status?: string | null
         }
@@ -33,6 +35,7 @@ export type Database = {
           applied_at?: string | null
           assignment_id?: string
           auditor_id?: string
+          bid_amount?: number | null
           id?: string
           status?: string | null
         }
@@ -62,6 +65,8 @@ export type Database = {
           branch_name: string
           city: string
           client_name: string
+          completed_at: string | null
+          completion_remarks: string | null
           created_at: string | null
           created_by: string
           deadline_date: string
@@ -71,6 +76,7 @@ export type Database = {
           longitude: number | null
           ope: number | null
           pincode: string
+          report_url: string | null
           state: string
           status: string | null
           updated_at: string | null
@@ -83,6 +89,8 @@ export type Database = {
           branch_name: string
           city: string
           client_name: string
+          completed_at?: string | null
+          completion_remarks?: string | null
           created_at?: string | null
           created_by: string
           deadline_date: string
@@ -92,6 +100,7 @@ export type Database = {
           longitude?: number | null
           ope?: number | null
           pincode: string
+          report_url?: string | null
           state: string
           status?: string | null
           updated_at?: string | null
@@ -104,6 +113,8 @@ export type Database = {
           branch_name?: string
           city?: string
           client_name?: string
+          completed_at?: string | null
+          completion_remarks?: string | null
           created_at?: string | null
           created_by?: string
           deadline_date?: string
@@ -113,6 +124,7 @@ export type Database = {
           longitude?: number | null
           ope?: number | null
           pincode?: string
+          report_url?: string | null
           state?: string
           status?: string | null
           updated_at?: string | null
