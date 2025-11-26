@@ -48,6 +48,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "applications_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments_auditor_detailed_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "applications_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments_public_view"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "applications_auditor_id_fkey"
             columns: ["auditor_id"]
             isOneToOne: false
@@ -278,6 +292,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "invoices_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments_auditor_detailed_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments_public_view"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "invoices_auditor_id_fkey"
             columns: ["auditor_id"]
             isOneToOne: false
@@ -341,7 +369,141 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      assignments_auditor_detailed_view: {
+        Row: {
+          address: string | null
+          allotted_to: string | null
+          audit_date: string | null
+          audit_type: string | null
+          branch_name: string | null
+          can_view_details: boolean | null
+          city: string | null
+          client_name: string | null
+          completed_at: string | null
+          completion_remarks: string | null
+          created_at: string | null
+          created_by: string | null
+          deadline_date: string | null
+          fees: number | null
+          id: string | null
+          latitude: number | null
+          longitude: number | null
+          ope: number | null
+          pincode: string | null
+          report_url: string | null
+          state: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          address?: string | null
+          allotted_to?: string | null
+          audit_date?: string | null
+          audit_type?: string | null
+          branch_name?: string | null
+          can_view_details?: never
+          city?: string | null
+          client_name?: string | null
+          completed_at?: string | null
+          completion_remarks?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          deadline_date?: string | null
+          fees?: number | null
+          id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          ope?: number | null
+          pincode?: string | null
+          report_url?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          address?: string | null
+          allotted_to?: string | null
+          audit_date?: string | null
+          audit_type?: string | null
+          branch_name?: string | null
+          can_view_details?: never
+          city?: string | null
+          client_name?: string | null
+          completed_at?: string | null
+          completion_remarks?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          deadline_date?: string | null
+          fees?: number | null
+          id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          ope?: number | null
+          pincode?: string | null
+          report_url?: string | null
+          state?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignments_allotted_to_fkey"
+            columns: ["allotted_to"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assignments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assignments_public_view: {
+        Row: {
+          audit_date: string | null
+          audit_type: string | null
+          city: string | null
+          created_at: string | null
+          deadline_date: string | null
+          id: string | null
+          latitude: number | null
+          longitude: number | null
+          pincode: string | null
+          state: string | null
+          status: string | null
+        }
+        Insert: {
+          audit_date?: string | null
+          audit_type?: string | null
+          city?: string | null
+          created_at?: string | null
+          deadline_date?: string | null
+          id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          pincode?: string | null
+          state?: string | null
+          status?: string | null
+        }
+        Update: {
+          audit_date?: string | null
+          audit_type?: string | null
+          city?: string | null
+          created_at?: string | null
+          deadline_date?: string | null
+          id?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          pincode?: string | null
+          state?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {
