@@ -16,7 +16,6 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'admin' | 'auditor' | 'client'>('auditor');
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -45,23 +44,22 @@ export default function Auth() {
       if (error) throw error;
 
       if (data.user) {
-        // Create role entry
+        // All new users default to 'auditor' role for security
+        // Admin role must be assigned manually by existing admin
         const { error: roleError } = await supabase
           .from('user_roles')
-          .insert({ user_id: data.user.id, role });
+          .insert({ user_id: data.user.id, role: 'auditor' });
 
         if (roleError) throw roleError;
 
-        // If auditor, create auditor profile
-        if (role === 'auditor') {
-          const { error: profileError } = await supabase
-            .from('auditor_profiles')
-            .insert({ user_id: data.user.id });
+        // Create auditor profile for all new users
+        const { error: profileError } = await supabase
+          .from('auditor_profiles')
+          .insert({ user_id: data.user.id });
 
-          if (profileError) throw profileError;
-        }
+        if (profileError) throw profileError;
 
-        toast.success('Account created successfully! Please sign in.');
+        toast.success('Account created successfully! Please complete your profile after signing in.');
         setEmail('');
         setPassword('');
         setFullName('');
@@ -174,19 +172,9 @@ export default function Auth() {
                     minLength={6}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="role">I am a</Label>
-                  <Select value={role} onValueChange={(value: any) => setRole(value)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Admin / Agency Head</SelectItem>
-                      <SelectItem value="auditor">Auditor / Field Agent</SelectItem>
-                      <SelectItem value="client">Client</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  All new accounts are created as Auditors. Contact your admin for role changes.
+                </p>
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? 'Creating account...' : 'Create Account'}
                 </Button>

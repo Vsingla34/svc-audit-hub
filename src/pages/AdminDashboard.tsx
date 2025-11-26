@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft, MapPin } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { useNavigate } from 'react-router-dom';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
@@ -30,6 +31,9 @@ export default function AdminDashboard() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterState, setFilterState] = useState<string>('all');
+  const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>('');
+  const [showBulkActions, setShowBulkActions] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -299,6 +303,76 @@ export default function AdminDashboard() {
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
+    }
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (selectedAssignments.length === 0) {
+      toast.error('Please select assignments first');
+      return;
+    }
+    if (!bulkStatus) {
+      toast.error('Please select a status');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .update({ status: bulkStatus })
+        .in('id', selectedAssignments);
+
+      if (error) throw error;
+      toast.success(`${selectedAssignments.length} assignments updated to ${bulkStatus}`);
+      setSelectedAssignments([]);
+      setBulkStatus('');
+      setShowBulkActions(false);
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const handleBulkReassign = async () => {
+    if (selectedAssignments.length === 0) {
+      toast.error('Please select assignments first');
+      return;
+    }
+
+    if (!confirm(`Clear allocation for ${selectedAssignments.length} assignments?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .update({ 
+          allotted_to: null, 
+          status: 'open' 
+        })
+        .in('id', selectedAssignments);
+
+      if (error) throw error;
+      toast.success(`${selectedAssignments.length} assignments cleared and set to open`);
+      setSelectedAssignments([]);
+      setShowBulkActions(false);
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+
+  const toggleAssignmentSelection = (assignmentId: string) => {
+    setSelectedAssignments(prev => 
+      prev.includes(assignmentId) 
+        ? prev.filter(id => id !== assignmentId)
+        : [...prev, assignmentId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedAssignments.length === filteredAssignments.length) {
+      setSelectedAssignments([]);
+    } else {
+      setSelectedAssignments(filteredAssignments.map(a => a.id));
     }
   };
 
@@ -694,13 +768,69 @@ export default function AdminDashboard() {
         {/* All Assignments */}
         <Card>
           <CardHeader>
-            <CardTitle>All Assignments</CardTitle>
-            <CardDescription>Manage all audit assignments</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>All Assignments</CardTitle>
+                <CardDescription>Manage all audit assignments</CardDescription>
+              </div>
+              {selectedAssignments.length > 0 && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowBulkActions(!showBulkActions)}
+                >
+                  Bulk Actions ({selectedAssignments.length} selected)
+                </Button>
+              )}
+            </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {showBulkActions && selectedAssignments.length > 0 && (
+              <div className="p-4 border rounded-lg bg-muted/50 space-y-3">
+                <h4 className="font-medium">Bulk Actions</h4>
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1">
+                    <Label>Update Status</Label>
+                    <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="open">Open</SelectItem>
+                        <SelectItem value="allotted">Allotted</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleBulkStatusUpdate}>
+                    Update Status
+                  </Button>
+                  <Button variant="outline" onClick={handleBulkReassign}>
+                    Clear Allocations
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => {
+                      setSelectedAssignments([]);
+                      setShowBulkActions(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">
+                    <input
+                      type="checkbox"
+                      checked={selectedAssignments.length === filteredAssignments.length && filteredAssignments.length > 0}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer"
+                    />
+                  </TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Branch</TableHead>
                   <TableHead>Location</TableHead>
@@ -714,6 +844,14 @@ export default function AdminDashboard() {
               <TableBody>
                 {filteredAssignments.map((assignment) => (
                   <TableRow key={assignment.id}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selectedAssignments.includes(assignment.id)}
+                        onChange={() => toggleAssignmentSelection(assignment.id)}
+                        className="cursor-pointer"
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{assignment.client_name}</TableCell>
                     <TableCell>{assignment.branch_name}</TableCell>
                     <TableCell>{assignment.city}, {assignment.state}</TableCell>

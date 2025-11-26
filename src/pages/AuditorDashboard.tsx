@@ -41,11 +41,10 @@ export default function AuditorDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch open assignments
+      // Fetch open assignments using the limited public view
       const { data: openData, error: openError } = await supabase
-        .from('assignments')
+        .from('assignments_public_view')
         .select('*')
-        .eq('status', 'open')
         .order('audit_date', { ascending: true });
 
       if (openError) throw openError;
