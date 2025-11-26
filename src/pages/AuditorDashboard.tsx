@@ -19,6 +19,8 @@ export default function AuditorDashboard() {
   const [myAssignments, setMyAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
+  const [bidAmount, setBidAmount] = useState<{ [key: string]: number }>({});
+  const [uploadingReport, setUploadingReport] = useState<string | null>(null);
 
   useEffect(() => {
     checkKycStatus();
@@ -85,6 +87,12 @@ export default function AuditorDashboard() {
       return;
     }
 
+    const bid = bidAmount[assignmentId];
+    if (!bid || bid <= 0) {
+      toast.error('Please enter a valid bid amount');
+      return;
+    }
+
     try {
       // Check if already applied
       const existingApplication = myApplications.find(
@@ -99,14 +107,53 @@ export default function AuditorDashboard() {
       const { error } = await supabase.from('applications').insert({
         assignment_id: assignmentId,
         auditor_id: user?.id,
+        bid_amount: bid,
       });
 
       if (error) throw error;
 
       toast.success('Application submitted successfully!');
+      setBidAmount(prev => ({ ...prev, [assignmentId]: 0 }));
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
+    }
+  };
+
+  const handleReportUpload = async (assignmentId: string, file: File) => {
+    setUploadingReport(assignmentId);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${assignmentId}-${Date.now()}.${fileExt}`;
+      const filePath = `reports/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('kyc-documents')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('kyc-documents')
+        .getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from('assignments')
+        .update({ 
+          report_url: publicUrl,
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', assignmentId);
+
+      if (updateError) throw updateError;
+
+      toast.success('Report uploaded successfully!');
+      fetchData();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setUploadingReport(null);
     }
   };
 
@@ -254,12 +301,45 @@ export default function AuditorDashboard() {
                   );
                   
                   return (
-                    <AssignmentCard
-                      key={assignment.id}
-                      assignment={assignment}
-                      onApply={handleApply}
-                      showApplyButton={!hasApplied}
-                    />
+                    <Card key={assignment.id}>
+                      <CardHeader>
+                        <CardTitle className="text-lg">{assignment.client_name}</CardTitle>
+                        <CardDescription>{assignment.branch_name}</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-sm space-y-2">
+                          <div>Location: {assignment.city}, {assignment.state}</div>
+                          <div>Audit Date: {new Date(assignment.audit_date).toLocaleDateString('en-IN')}</div>
+                          <div className="font-semibold text-primary">Fees: ₹{assignment.fees.toLocaleString('en-IN')}</div>
+                          {!hasApplied && (
+                            <div className="mt-4 space-y-2">
+                              <label className="text-sm font-medium">Your Bid Amount (₹)</label>
+                              <input
+                                type="number"
+                                className="w-full p-2 border rounded"
+                                placeholder="Enter your bid"
+                                value={bidAmount[assignment.id] || ''}
+                                onChange={(e) => setBidAmount(prev => ({ 
+                                  ...prev, 
+                                  [assignment.id]: Number(e.target.value) 
+                                }))}
+                              />
+                              <Button
+                                className="w-full"
+                                onClick={() => handleApply(assignment.id)}
+                              >
+                                Submit Bid
+                              </Button>
+                            </div>
+                          )}
+                          {hasApplied && (
+                            <div className="mt-4 text-center text-muted-foreground">
+                              Application Submitted
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
                   );
                 })}
               </div>
@@ -291,7 +371,8 @@ export default function AuditorDashboard() {
                         <div>Location: {app.assignment.city}, {app.assignment.state}</div>
                         <div>Applied: {new Date(app.applied_at).toLocaleDateString('en-IN')}</div>
                         <div>Audit Date: {new Date(app.assignment.audit_date).toLocaleDateString('en-IN')}</div>
-                        <div className="font-semibold text-primary mt-2">Fees: ₹{app.assignment.fees.toLocaleString('en-IN')}</div>
+                        <div className="font-semibold text-primary mt-2">Your Bid: ₹{app.bid_amount?.toLocaleString('en-IN') || 0}</div>
+                        <div className="font-semibold text-primary">Assignment Fees: ₹{app.assignment.fees.toLocaleString('en-IN')}</div>
                       </div>
                       {app.status === 'pending' && (
                         <Button
@@ -320,10 +401,52 @@ export default function AuditorDashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {myAssignments.map((assignment) => (
-                  <AssignmentCard
-                    key={assignment.id}
-                    assignment={assignment}
-                  />
+                  <Card key={assignment.id}>
+                    <CardHeader>
+                      <CardTitle className="text-lg">{assignment.client_name}</CardTitle>
+                      <CardDescription>{assignment.branch_name}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm space-y-2">
+                        <div>Location: {assignment.city}, {assignment.state}</div>
+                        <div>Audit Date: {new Date(assignment.audit_date).toLocaleDateString('en-IN')}</div>
+                        <div className="font-semibold text-primary">Fees: ₹{assignment.fees.toLocaleString('en-IN')}</div>
+                        <StatusBadge status={assignment.status} />
+                        
+                        {assignment.status === 'allotted' && !assignment.report_url && (
+                          <div className="mt-4">
+                            <label className="text-sm font-medium">Upload Report</label>
+                            <input
+                              type="file"
+                              className="w-full mt-2"
+                              accept=".pdf,.doc,.docx"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleReportUpload(assignment.id, file);
+                              }}
+                              disabled={uploadingReport === assignment.id}
+                            />
+                            {uploadingReport === assignment.id && (
+                              <div className="text-sm text-muted-foreground mt-2">Uploading...</div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {assignment.report_url && (
+                          <div className="mt-4">
+                            <a 
+                              href={assignment.report_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-primary underline text-sm"
+                            >
+                              View Submitted Report
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
             )}
