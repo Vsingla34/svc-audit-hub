@@ -10,6 +10,12 @@ import { LogOut, Briefcase, Clock, CheckCircle, AlertCircle, DollarSign, ArrowLe
 import { StatusBadge } from '@/components/StatusBadge';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { NotificationBell } from '@/components/NotificationBell';
 
 export default function AuditorDashboard() {
   const { signOut, user } = useAuth();
@@ -19,8 +25,18 @@ export default function AuditorDashboard() {
   const [myAssignments, setMyAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
-  const [bidAmount, setBidAmount] = useState<{ [key: string]: number }>({});
   const [uploadingReport, setUploadingReport] = useState<string | null>(null);
+  
+  // Filters
+  const [filterCity, setFilterCity] = useState<string>('all');
+  const [filterState, setFilterState] = useState<string>('all');
+  const [filterAuditType, setFilterAuditType] = useState<string>('all');
+  
+  // Report submission dialog
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [selectedAssignmentForReport, setSelectedAssignmentForReport] = useState<any>(null);
+  const [completionStatus, setCompletionStatus] = useState<string>('completed');
+  const [incompleteReason, setIncompleteReason] = useState<string>('');
 
   useEffect(() => {
     checkKycStatus();
@@ -86,12 +102,6 @@ export default function AuditorDashboard() {
       return;
     }
 
-    const bid = bidAmount[assignmentId];
-    if (!bid || bid <= 0) {
-      toast.error('Please enter a valid bid amount');
-      return;
-    }
-
     try {
       // Check if already applied
       const existingApplication = myApplications.find(
@@ -106,24 +116,31 @@ export default function AuditorDashboard() {
       const { error } = await supabase.from('applications').insert({
         assignment_id: assignmentId,
         auditor_id: user?.id,
-        bid_amount: bid,
       });
 
       if (error) throw error;
 
       toast.success('Application submitted successfully!');
-      setBidAmount(prev => ({ ...prev, [assignmentId]: 0 }));
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
     }
   };
 
-  const handleReportUpload = async (assignmentId: string, file: File) => {
-    setUploadingReport(assignmentId);
+  const openReportDialog = (assignment: any) => {
+    setSelectedAssignmentForReport(assignment);
+    setCompletionStatus('completed');
+    setIncompleteReason('');
+    setReportDialogOpen(true);
+  };
+
+  const handleReportUpload = async (file: File) => {
+    if (!selectedAssignmentForReport) return;
+    
+    setUploadingReport(selectedAssignmentForReport.id);
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${assignmentId}-${Date.now()}.${fileExt}`;
+      const fileName = `${selectedAssignmentForReport.id}-${Date.now()}.${fileExt}`;
       const filePath = `reports/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -136,18 +153,28 @@ export default function AuditorDashboard() {
         .from('kyc-documents')
         .getPublicUrl(filePath);
 
+      const updateData: any = { 
+        report_url: publicUrl,
+        completion_status: completionStatus,
+      };
+
+      if (completionStatus === 'completed') {
+        updateData.status = 'completed';
+        updateData.completed_at = new Date().toISOString();
+      } else {
+        updateData.incomplete_reason = incompleteReason;
+      }
+
       const { error: updateError } = await supabase
         .from('assignments')
-        .update({ 
-          report_url: publicUrl,
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', assignmentId);
+        .update(updateData)
+        .eq('id', selectedAssignmentForReport.id);
 
       if (updateError) throw updateError;
 
       toast.success('Report uploaded successfully!');
+      setReportDialogOpen(false);
+      setSelectedAssignmentForReport(null);
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
@@ -173,7 +200,16 @@ export default function AuditorDashboard() {
     }
   };
 
-  if (loading) {
+  const filteredOpenAssignments = openAssignments.filter(assignment => {
+    if (filterState !== 'all' && assignment.state !== filterState) return false;
+    if (filterCity !== 'all' && assignment.city !== filterCity) return false;
+    if (filterAuditType !== 'all' && assignment.audit_type !== filterAuditType) return false;
+    return true;
+  });
+
+  const uniqueStates = [...new Set(openAssignments.map(a => a.state))].filter(Boolean);
+  const uniqueCities = [...new Set(openAssignments.map(a => a.city))].filter(Boolean);
+  const uniqueAuditTypes = [...new Set(openAssignments.map(a => a.audit_type))].filter(Boolean);
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -197,11 +233,12 @@ export default function AuditorDashboard() {
           </div>
           <div className="flex items-center gap-2">
             {kycStatus === 'approved' && (
-              <Button variant="outline" onClick={() => navigate('/payments')}>
+            <Button variant="outline" onClick={() => navigate('/payments')}>
                 <DollarSign className="h-4 w-4 mr-2" />
                 Payments
               </Button>
             )}
+            <NotificationBell />
             <Button variant="outline" onClick={signOut}>
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
@@ -286,7 +323,57 @@ export default function AuditorDashboard() {
           </TabsList>
 
           <TabsContent value="available" className="space-y-4">
-            {openAssignments.length === 0 ? (
+            {/* Filters */}
+            <Card>
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>State</Label>
+                    <Select value={filterState} onValueChange={setFilterState}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All States" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All States</SelectItem>
+                        {uniqueStates.map(state => (
+                          <SelectItem key={state} value={state}>{state}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>City</Label>
+                    <Select value={filterCity} onValueChange={setFilterCity}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Cities" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Cities</SelectItem>
+                        {uniqueCities.map(city => (
+                          <SelectItem key={city} value={city}>{city}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Audit Type</Label>
+                    <Select value={filterAuditType} onValueChange={setFilterAuditType}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Types" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        {uniqueAuditTypes.map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {filteredOpenAssignments.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-muted-foreground">
                   No open assignments available at the moment.
@@ -294,7 +381,7 @@ export default function AuditorDashboard() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {openAssignments.map((assignment) => {
+                {filteredOpenAssignments.map((assignment) => {
                   const hasApplied = myApplications.some(
                     app => app.assignment_id === assignment.id
                   );
@@ -302,37 +389,29 @@ export default function AuditorDashboard() {
                   return (
                     <Card key={assignment.id}>
                       <CardHeader>
-                        <CardTitle className="text-lg">{assignment.audit_type || 'Assignment'}</CardTitle>
-                        <CardDescription>{assignment.city}, {assignment.state}</CardDescription>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardTitle className="text-lg">{assignment.audit_type || 'Assignment'}</CardTitle>
+                            <CardDescription>{assignment.city}, {assignment.state}</CardDescription>
+                          </div>
+                          <span className="text-xs text-muted-foreground">#{assignment.id?.substring(0, 8)}</span>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         <div className="text-sm space-y-2">
                           <div>Location: {assignment.city}, {assignment.state}</div>
                           <div>Audit Date: {assignment.audit_date ? new Date(assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
-                          <div className="text-xs text-muted-foreground">Apply to view full details</div>
+                          <div className="text-xs text-muted-foreground">Apply to view full details including fees and client information</div>
                           {!hasApplied && (
-                            <div className="mt-4 space-y-2">
-                              <label className="text-sm font-medium">Your Bid Amount (₹)</label>
-                              <input
-                                type="number"
-                                className="w-full p-2 border rounded"
-                                placeholder="Enter your bid"
-                                value={bidAmount[assignment.id] || ''}
-                                onChange={(e) => setBidAmount(prev => ({ 
-                                  ...prev, 
-                                  [assignment.id]: Number(e.target.value) 
-                                }))}
-                              />
-                              <Button
-                                className="w-full"
-                                onClick={() => handleApply(assignment.id)}
-                              >
-                                Submit Bid
-                              </Button>
-                            </div>
+                            <Button
+                              className="w-full mt-4"
+                              onClick={() => handleApply(assignment.id)}
+                            >
+                              Apply for Assignment
+                            </Button>
                           )}
                           {hasApplied && (
-                            <div className="mt-4 text-center text-muted-foreground">
+                            <div className="mt-4 text-center text-accent-foreground bg-accent/10 py-2 rounded">
                               Application Submitted
                             </div>
                           )}
@@ -370,8 +449,10 @@ export default function AuditorDashboard() {
                         <div>Location: {app.assignment?.city}, {app.assignment?.state}</div>
                         <div>Applied: {app.applied_at ? new Date(app.applied_at).toLocaleDateString('en-IN') : 'N/A'}</div>
                         <div>Audit Date: {app.assignment?.audit_date ? new Date(app.assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
-                        <div className="font-semibold text-primary mt-2">Your Bid: ₹{app.bid_amount ? Number(app.bid_amount).toLocaleString('en-IN') : '0'}</div>
-                        {app.assignment?.fees && <div className="font-semibold text-primary">Assignment Fees: ₹{Number(app.assignment.fees).toLocaleString('en-IN')}</div>}
+                        {app.assignment?.assignment_number && (
+                          <div className="text-xs font-mono">Assignment #{app.assignment.assignment_number}</div>
+                        )}
+                        {app.assignment?.fees && <div className="font-semibold text-primary mt-2">Fees: ₹{Number(app.assignment.fees).toLocaleString('en-IN')}</div>}
                       </div>
                       {app.status === 'pending' && (
                         <Button
@@ -400,58 +481,120 @@ export default function AuditorDashboard() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {myAssignments.map((assignment) => (
-                  <Card key={assignment.id}>
-                    <CardHeader>
-                      <CardTitle className="text-lg">{assignment.client_name}</CardTitle>
-                      <CardDescription>{assignment.branch_name}</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-sm space-y-2">
-                        <div>Location: {assignment.city}, {assignment.state}</div>
-                        <div>Audit Date: {assignment.audit_date ? new Date(assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
-                        {assignment.fees && <div className="font-semibold text-primary">Fees: ₹{Number(assignment.fees).toLocaleString('en-IN')}</div>}
-                        <StatusBadge status={assignment.status} />
-                        
-                        {assignment.status === 'allotted' && !assignment.report_url && (
-                          <div className="mt-4">
-                            <label className="text-sm font-medium">Upload Report</label>
-                            <input
-                              type="file"
-                              className="w-full mt-2"
-                              accept=".pdf,.doc,.docx"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleReportUpload(assignment.id, file);
-                              }}
-                              disabled={uploadingReport === assignment.id}
-                            />
-                            {uploadingReport === assignment.id && (
-                              <div className="text-sm text-muted-foreground mt-2">Uploading...</div>
-                            )}
+                    <Card key={assignment.id}>
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <CardTitle className="text-lg">{assignment.client_name}</CardTitle>
+                            <CardDescription>{assignment.branch_name}</CardDescription>
+                            <div className="text-xs font-mono text-muted-foreground mt-1">#{assignment.assignment_number}</div>
                           </div>
-                        )}
-                        
-                        {assignment.report_url && (
-                          <div className="mt-4">
-                            <a 
-                              href={assignment.report_url} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-primary underline text-sm"
+                          <StatusBadge status={assignment.status} />
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-sm space-y-2">
+                          <div>Location: {assignment.city}, {assignment.state}</div>
+                          <div>Audit Date: {assignment.audit_date ? new Date(assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
+                          {assignment.fees && <div className="font-semibold text-primary">Fees: ₹{Number(assignment.fees).toLocaleString('en-IN')}</div>}
+                          
+                          {assignment.status === 'allotted' && !assignment.report_url && (
+                            <Button
+                              className="w-full mt-4"
+                              onClick={() => openReportDialog(assignment)}
                             >
-                              View Submitted Report
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                              Upload Report
+                            </Button>
+                          )}
+
+                          {assignment.report_url && (
+                            <div className="mt-4 p-2 bg-accent/10 rounded text-center text-sm">
+                              Report Submitted
+                              {assignment.completion_status === 'incomplete' && (
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  Status: Incomplete
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
                 ))}
               </div>
             )}
           </TabsContent>
         </Tabs>
       </main>
+
+      {/* Report Upload Dialog */}
+      <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Submit Assignment Report</DialogTitle>
+            <DialogDescription>
+              Upload your report and indicate completion status
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Completion Status</Label>
+              <RadioGroup value={completionStatus} onValueChange={setCompletionStatus}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="completed" id="completed" />
+                  <Label htmlFor="completed" className="font-normal cursor-pointer">
+                    Audit Completed Successfully
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="incomplete" id="incomplete" />
+                  <Label htmlFor="incomplete" className="font-normal cursor-pointer">
+                    Audit Incomplete
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {completionStatus === 'incomplete' && (
+              <div className="space-y-2">
+                <Label htmlFor="reason">Reason for Incomplete Audit</Label>
+                <Textarea
+                  id="reason"
+                  value={incompleteReason}
+                  onChange={(e) => setIncompleteReason(e.target.value)}
+                  placeholder="Please explain why the audit could not be completed..."
+                  rows={4}
+                  required
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="report-file">Upload Report (PDF, DOC, DOCX)</Label>
+              <input
+                id="report-file"
+                type="file"
+                className="w-full p-2 border rounded"
+                accept=".pdf,.doc,.docx"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (completionStatus === 'incomplete' && !incompleteReason.trim()) {
+                      toast.error('Please provide a reason for incomplete audit');
+                      return;
+                    }
+                    handleReportUpload(file);
+                  }
+                }}
+                disabled={uploadingReport !== null}
+              />
+              {uploadingReport && (
+                <div className="text-sm text-muted-foreground">Uploading...</div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

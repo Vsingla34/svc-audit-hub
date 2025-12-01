@@ -19,7 +19,6 @@ export type Database = {
           applied_at: string | null
           assignment_id: string
           auditor_id: string
-          bid_amount: number | null
           id: string
           status: string | null
         }
@@ -27,7 +26,6 @@ export type Database = {
           applied_at?: string | null
           assignment_id: string
           auditor_id: string
-          bid_amount?: number | null
           id?: string
           status?: string | null
         }
@@ -35,7 +33,6 @@ export type Database = {
           applied_at?: string | null
           assignment_id?: string
           auditor_id?: string
-          bid_amount?: number | null
           id?: string
           status?: string | null
         }
@@ -74,18 +71,22 @@ export type Database = {
         Row: {
           address: string
           allotted_to: string | null
+          assignment_number: string | null
           audit_date: string
           audit_type: string
+          auditor_rating: number | null
           branch_name: string
           city: string
           client_name: string
           completed_at: string | null
           completion_remarks: string | null
+          completion_status: string | null
           created_at: string | null
           created_by: string
           deadline_date: string
           fees: number
           id: string
+          incomplete_reason: string | null
           latitude: number | null
           longitude: number | null
           ope: number | null
@@ -98,18 +99,22 @@ export type Database = {
         Insert: {
           address: string
           allotted_to?: string | null
+          assignment_number?: string | null
           audit_date: string
           audit_type: string
+          auditor_rating?: number | null
           branch_name: string
           city: string
           client_name: string
           completed_at?: string | null
           completion_remarks?: string | null
+          completion_status?: string | null
           created_at?: string | null
           created_by: string
           deadline_date: string
           fees: number
           id?: string
+          incomplete_reason?: string | null
           latitude?: number | null
           longitude?: number | null
           ope?: number | null
@@ -122,18 +127,22 @@ export type Database = {
         Update: {
           address?: string
           allotted_to?: string | null
+          assignment_number?: string | null
           audit_date?: string
           audit_type?: string
+          auditor_rating?: number | null
           branch_name?: string
           city?: string
           client_name?: string
           completed_at?: string | null
           completion_remarks?: string | null
+          completion_status?: string | null
           created_at?: string | null
           created_by?: string
           deadline_date?: string
           fees?: number
           id?: string
+          incomplete_reason?: string | null
           latitude?: number | null
           longitude?: number | null
           ope?: number | null
@@ -310,6 +319,64 @@ export type Database = {
             columns: ["auditor_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          message: string
+          read: boolean | null
+          related_assignment_id: string | null
+          title: string
+          type: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          message: string
+          read?: boolean | null
+          related_assignment_id?: string | null
+          title: string
+          type?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          message?: string
+          read?: boolean | null
+          related_assignment_id?: string | null
+          title?: string
+          type?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_related_assignment_id_fkey"
+            columns: ["related_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_related_assignment_id_fkey"
+            columns: ["related_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments_auditor_detailed_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_related_assignment_id_fkey"
+            columns: ["related_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "assignments_public_view"
             referencedColumns: ["id"]
           },
         ]
