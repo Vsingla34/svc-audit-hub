@@ -10,10 +10,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft, MapPin } from 'lucide-react';
+import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft, MapPin, Star, BarChart3 } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { useNavigate } from 'react-router-dom';
 import { Checkbox } from '@/components/ui/checkbox';
+import { AssignmentFilters } from '@/components/AssignmentFilters';
+import { DashboardAnalytics } from '@/components/DashboardAnalytics';
+import { NotificationBell } from '@/components/NotificationBell';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
@@ -31,9 +35,15 @@ export default function AdminDashboard() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterState, setFilterState] = useState<string>('all');
+  const [filterCity, setFilterCity] = useState<string>('all');
+  const [filterAuditType, setFilterAuditType] = useState<string>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState<string>('');
   const [showBulkActions, setShowBulkActions] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [auditorRatings, setAuditorRatings] = useState<Record<string, number>>({});
   
   // Form state
   const [formData, setFormData] = useState({
@@ -73,19 +83,34 @@ export default function AdminDashboard() {
       
       setStats({ total, open, allotted, completed });
 
-      // Fetch applications
+      // Fetch applications with auditor profiles for ratings
       const { data: applicationsData, error: applicationsError } = await supabase
         .from('applications')
         .select(`
           *,
-          assignment:assignments(client_name, branch_name, city, state),
-          auditor:profiles(full_name, email)
+          assignment:assignments(client_name, branch_name, city, state, assignment_number),
+          auditor:profiles!applications_auditor_id_fkey(full_name, email, id)
         `)
         .eq('status', 'pending')
         .order('applied_at', { ascending: false });
 
       if (applicationsError) throw applicationsError;
       setApplications(applicationsData || []);
+
+      // Fetch auditor ratings for all auditors in applications
+      if (applicationsData && applicationsData.length > 0) {
+        const auditorIds = applicationsData.map(app => app.auditor_id);
+        const { data: profilesData } = await supabase
+          .from('auditor_profiles')
+          .select('user_id, rating')
+          .in('user_id', auditorIds);
+
+        const ratingsMap: Record<string, number> = {};
+        profilesData?.forEach(profile => {
+          ratingsMap[profile.user_id] = profile.rating || 0;
+        });
+        setAuditorRatings(ratingsMap);
+      }
 
       // Fetch pending KYC
       const { data: kycData, error: kycError } = await supabase
@@ -227,6 +252,17 @@ export default function AdminDashboard() {
             },
           },
         });
+
+        // Create notification
+        await supabase.functions.invoke('create-notification', {
+          body: {
+            user_id: auditorId,
+            title: 'Assignment Allotted',
+            message: `You have been assigned to ${assignment.client_name} - ${assignment.branch_name}. Assignment #${assignment.assignment_number}`,
+            type: 'success',
+            related_assignment_id: assignmentId,
+          },
+        });
       }
 
       toast.success('Assignment allotted successfully!');
@@ -271,21 +307,64 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleCompleteAssignment = async (assignmentId: string) => {
+  const handleCompleteAssignment = async (assignmentId: string, rating?: number) => {
     try {
-      const { error } = await supabase
+      const updateData: any = { 
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      };
+      
+      if (rating) {
+        updateData.auditor_rating = rating;
+      }
+
+      const { data: assignment, error } = await supabase
         .from('assignments')
-        .update({ 
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
-        .eq('id', assignmentId);
+        .update(updateData)
+        .eq('id', assignmentId)
+        .select('allotted_to')
+        .single();
 
       if (error) throw error;
+
+      // Send notification to auditor
+      if (assignment?.allotted_to) {
+        await supabase.functions.invoke('create-notification', {
+          body: {
+            user_id: assignment.allotted_to,
+            title: 'Assignment Completed',
+            message: rating 
+              ? `Your assignment has been marked complete with a rating of ${rating}/5 stars!`
+              : 'Your assignment has been marked as completed.',
+            type: 'success',
+            related_assignment_id: assignmentId,
+          },
+        });
+      }
+
       toast.success('Assignment marked as completed');
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
+    }
+  };
+
+  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
+  const [selectedAssignmentForRating, setSelectedAssignmentForRating] = useState<string | null>(null);
+  const [tempRating, setTempRating] = useState(0);
+
+  const openRatingDialog = (assignmentId: string) => {
+    setSelectedAssignmentForRating(assignmentId);
+    setTempRating(0);
+    setRatingDialogOpen(true);
+  };
+
+  const submitRating = () => {
+    if (selectedAssignmentForRating && tempRating > 0) {
+      handleCompleteAssignment(selectedAssignmentForRating, tempRating);
+      setRatingDialogOpen(false);
+      setSelectedAssignmentForRating(null);
+      setTempRating(0);
     }
   };
 
@@ -379,10 +458,41 @@ export default function AdminDashboard() {
   const filteredAssignments = assignments.filter(assignment => {
     if (filterStatus !== 'all' && assignment.status !== filterStatus) return false;
     if (filterState !== 'all' && assignment.state !== filterState) return false;
+    if (filterCity !== 'all' && assignment.city !== filterCity) return false;
+    if (filterAuditType !== 'all' && assignment.audit_type !== filterAuditType) return false;
+    if (filterDateFrom && new Date(assignment.audit_date) < new Date(filterDateFrom)) return false;
+    if (filterDateTo && new Date(assignment.audit_date) > new Date(filterDateTo)) return false;
     return true;
   });
 
   const uniqueStates = [...new Set(assignments.map(a => a.state))];
+  const uniqueCities = [...new Set(assignments.map(a => a.city))];
+  const uniqueAuditTypes = [...new Set(assignments.map(a => a.audit_type))];
+
+  const handleFilterChange = (filters: {
+    status?: string;
+    state?: string;
+    city?: string;
+    auditType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }) => {
+    if (filters.status !== undefined) setFilterStatus(filters.status);
+    if (filters.state !== undefined) setFilterState(filters.state);
+    if (filters.city !== undefined) setFilterCity(filters.city);
+    if (filters.auditType !== undefined) setFilterAuditType(filters.auditType);
+    if (filters.dateFrom !== undefined) setFilterDateFrom(filters.dateFrom);
+    if (filters.dateTo !== undefined) setFilterDateTo(filters.dateTo);
+  };
+
+  const resetFilters = () => {
+    setFilterStatus('all');
+    setFilterState('all');
+    setFilterCity('all');
+    setFilterAuditType('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+  };
 
   if (loading) {
     return (
@@ -407,6 +517,10 @@ export default function AdminDashboard() {
             <h1 className="text-2xl font-bold text-primary">Admin Dashboard</h1>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShowAnalytics(!showAnalytics)}>
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analytics
+            </Button>
             <Button variant="outline" onClick={() => navigate('/payments')}>
               <DollarSign className="h-4 w-4 mr-2" />
               Payments
@@ -415,6 +529,7 @@ export default function AdminDashboard() {
               <MapPin className="h-4 w-4 mr-2" />
               Map View
             </Button>
+            <NotificationBell />
             <Button variant="outline" onClick={signOut}>
               <LogOut className="h-4 w-4 mr-2" />
               Sign Out
@@ -424,6 +539,11 @@ export default function AdminDashboard() {
       </header>
 
       <main className="container mx-auto px-4 py-8 space-y-8">
+        {/* Analytics Dashboard */}
+        {showAnalytics && (
+          <DashboardAnalytics assignments={assignments} />
+        )}
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
@@ -605,43 +725,19 @@ export default function AdminDashboard() {
         </div>
 
         {/* Filters */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Filters</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="filterStatus">Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger id="filterStatus">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="allotted">Allotted</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="filterState">State</Label>
-                <Select value={filterState} onValueChange={setFilterState}>
-                  <SelectTrigger id="filterState">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All States</SelectItem>
-                    {uniqueStates.map(state => (
-                      <SelectItem key={state} value={state}>{state}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <AssignmentFilters
+          filterStatus={filterStatus}
+          filterState={filterState}
+          filterCity={filterCity}
+          filterAuditType={filterAuditType}
+          filterDateFrom={filterDateFrom}
+          filterDateTo={filterDateTo}
+          onFilterChange={handleFilterChange}
+          onReset={resetFilters}
+          states={uniqueStates}
+          cities={uniqueCities}
+          auditTypes={uniqueAuditTypes}
+        />
 
         {/* Pending KYC Approvals */}
         {pendingKyc.length > 0 && (
@@ -715,9 +811,9 @@ export default function AdminDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Auditor</TableHead>
+                    <TableHead>Rating</TableHead>
                     <TableHead>Assignment</TableHead>
                     <TableHead>Location</TableHead>
-                    <TableHead>Bid Amount</TableHead>
                     <TableHead>Applied</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -732,13 +828,19 @@ export default function AdminDashboard() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 fill-warning text-warning" />
+                          <span className="font-medium">{auditorRatings[app.auditor_id]?.toFixed(1) || 'N/A'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <div>
                           <div className="font-medium">{app.assignment?.client_name}</div>
                           <div className="text-sm text-muted-foreground">{app.assignment?.branch_name}</div>
+                          <div className="text-xs text-muted-foreground">#{app.assignment?.assignment_number}</div>
                         </div>
                       </TableCell>
                       <TableCell>{app.assignment?.city}, {app.assignment?.state}</TableCell>
-                      <TableCell className="font-semibold">₹{app.bid_amount?.toLocaleString('en-IN') || 0}</TableCell>
                       <TableCell>{new Date(app.applied_at).toLocaleDateString('en-IN')}</TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -824,13 +926,12 @@ export default function AdminDashboard() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={selectedAssignments.length === filteredAssignments.length && filteredAssignments.length > 0}
-                      onChange={toggleSelectAll}
-                      className="cursor-pointer"
+                      onCheckedChange={toggleSelectAll}
                     />
                   </TableHead>
+                  <TableHead>Assign #</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Branch</TableHead>
                   <TableHead>Location</TableHead>
@@ -838,6 +939,7 @@ export default function AdminDashboard() {
                   <TableHead>Date</TableHead>
                   <TableHead>Fees</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Rating</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -845,13 +947,12 @@ export default function AdminDashboard() {
                 {filteredAssignments.map((assignment) => (
                   <TableRow key={assignment.id}>
                     <TableCell>
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={selectedAssignments.includes(assignment.id)}
-                        onChange={() => toggleAssignmentSelection(assignment.id)}
-                        className="cursor-pointer"
+                        onCheckedChange={() => toggleAssignmentSelection(assignment.id)}
                       />
                     </TableCell>
+                    <TableCell className="text-xs font-mono">{assignment.assignment_number}</TableCell>
                     <TableCell className="font-medium">{assignment.client_name}</TableCell>
                     <TableCell>{assignment.branch_name}</TableCell>
                     <TableCell>{assignment.city}, {assignment.state}</TableCell>
@@ -860,6 +961,16 @@ export default function AdminDashboard() {
                     <TableCell>₹{assignment.fees.toLocaleString('en-IN')}</TableCell>
                     <TableCell>
                       <StatusBadge status={assignment.status} />
+                    </TableCell>
+                    <TableCell>
+                      {assignment.auditor_rating ? (
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 fill-warning text-warning" />
+                          <span>{assignment.auditor_rating}</span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">Not rated</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
@@ -874,8 +985,9 @@ export default function AdminDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleCompleteAssignment(assignment.id)}
+                              onClick={() => openRatingDialog(assignment.id)}
                             >
+                              <Star className="h-3 w-3 mr-1" />
                               Complete
                             </Button>
                           </>
@@ -904,6 +1016,48 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </main>
+
+      {/* Rating Dialog */}
+      <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rate Auditor & Complete Assignment</DialogTitle>
+            <DialogDescription>
+              Provide a rating (1-5 stars) for the auditor's performance
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((rating) => (
+                <button
+                  key={rating}
+                  onClick={() => setTempRating(rating)}
+                  className="transition-all hover:scale-110"
+                >
+                  <Star
+                    className={`h-10 w-10 ${
+                      rating <= tempRating
+                        ? 'fill-warning text-warning'
+                        : 'text-muted-foreground'
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+            <p className="text-center text-sm text-muted-foreground">
+              {tempRating > 0 ? `You selected ${tempRating} star${tempRating !== 1 ? 's' : ''}` : 'Click to rate'}
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRatingDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitRating} disabled={tempRating === 0}>
+              Complete Assignment
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
