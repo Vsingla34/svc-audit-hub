@@ -354,13 +354,13 @@ export default function AuditorDashboard() {
               </Card>
             ) : (
               <div className="grid grid-cols-1 gap-4">
-                {myApplications.map((app) => (
+                {myApplications.filter(app => app.assignment).map((app) => (
                   <Card key={app.id}>
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{app.assignment.client_name}</CardTitle>
-                          <CardDescription>{app.assignment.branch_name}</CardDescription>
+                          <CardTitle className="text-lg">{app.assignment?.client_name || 'Assignment Details Unavailable'}</CardTitle>
+                          <CardDescription>{app.assignment?.branch_name || 'N/A'}</CardDescription>
                         </div>
                         <StatusBadge status={app.status} />
                       </div>
