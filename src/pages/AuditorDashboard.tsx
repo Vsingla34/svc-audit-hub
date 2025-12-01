@@ -302,14 +302,14 @@ export default function AuditorDashboard() {
                   return (
                     <Card key={assignment.id}>
                       <CardHeader>
-                        <CardTitle className="text-lg">{assignment.client_name}</CardTitle>
-                        <CardDescription>{assignment.branch_name}</CardDescription>
+                        <CardTitle className="text-lg">{assignment.audit_type || 'Assignment'}</CardTitle>
+                        <CardDescription>{assignment.city}, {assignment.state}</CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="text-sm space-y-2">
                           <div>Location: {assignment.city}, {assignment.state}</div>
-                          <div>Audit Date: {new Date(assignment.audit_date).toLocaleDateString('en-IN')}</div>
-                          <div className="font-semibold text-primary">Fees: ₹{assignment.fees.toLocaleString('en-IN')}</div>
+                          <div>Audit Date: {assignment.audit_date ? new Date(assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
+                          <div className="text-xs text-muted-foreground">Apply to view full details</div>
                           {!hasApplied && (
                             <div className="mt-4 space-y-2">
                               <label className="text-sm font-medium">Your Bid Amount (₹)</label>
@@ -367,11 +367,11 @@ export default function AuditorDashboard() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-sm text-muted-foreground space-y-1">
-                        <div>Location: {app.assignment.city}, {app.assignment.state}</div>
-                        <div>Applied: {new Date(app.applied_at).toLocaleDateString('en-IN')}</div>
-                        <div>Audit Date: {new Date(app.assignment.audit_date).toLocaleDateString('en-IN')}</div>
-                        <div className="font-semibold text-primary mt-2">Your Bid: ₹{app.bid_amount?.toLocaleString('en-IN') || 0}</div>
-                        <div className="font-semibold text-primary">Assignment Fees: ₹{app.assignment.fees.toLocaleString('en-IN')}</div>
+                        <div>Location: {app.assignment?.city}, {app.assignment?.state}</div>
+                        <div>Applied: {app.applied_at ? new Date(app.applied_at).toLocaleDateString('en-IN') : 'N/A'}</div>
+                        <div>Audit Date: {app.assignment?.audit_date ? new Date(app.assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
+                        <div className="font-semibold text-primary mt-2">Your Bid: ₹{app.bid_amount ? Number(app.bid_amount).toLocaleString('en-IN') : '0'}</div>
+                        {app.assignment?.fees && <div className="font-semibold text-primary">Assignment Fees: ₹{Number(app.assignment.fees).toLocaleString('en-IN')}</div>}
                       </div>
                       {app.status === 'pending' && (
                         <Button
@@ -408,8 +408,8 @@ export default function AuditorDashboard() {
                     <CardContent>
                       <div className="text-sm space-y-2">
                         <div>Location: {assignment.city}, {assignment.state}</div>
-                        <div>Audit Date: {new Date(assignment.audit_date).toLocaleDateString('en-IN')}</div>
-                        <div className="font-semibold text-primary">Fees: ₹{assignment.fees.toLocaleString('en-IN')}</div>
+                        <div>Audit Date: {assignment.audit_date ? new Date(assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
+                        {assignment.fees && <div className="font-semibold text-primary">Fees: ₹{Number(assignment.fees).toLocaleString('en-IN')}</div>}
                         <StatusBadge status={assignment.status} />
                         
                         {assignment.status === 'allotted' && !assignment.report_url && (
