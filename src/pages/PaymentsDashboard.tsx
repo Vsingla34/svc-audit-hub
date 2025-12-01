@@ -234,7 +234,7 @@ export default function PaymentsDashboard() {
               <CardDescription>Total Amount</CardDescription>
               <CardTitle className="text-3xl flex items-center gap-2">
                 <DollarSign className="h-6 w-6 text-primary" />
-                ₹{stats.totalAmount.toLocaleString('en-IN')}
+                ₹{stats.totalAmount ? Number(stats.totalAmount).toLocaleString('en-IN') : '0'}
               </CardTitle>
             </CardHeader>
           </Card>
@@ -255,7 +255,7 @@ export default function PaymentsDashboard() {
                       <h3 className="font-medium">{assignment.client_name}</h3>
                       <p className="text-sm text-muted-foreground">{assignment.branch_name}</p>
                       <p className="text-sm font-semibold text-primary mt-1">
-                        Fees: ₹{assignment.fees.toLocaleString('en-IN')} + OPE: ₹{(assignment.ope || 0).toLocaleString('en-IN')}
+                        Fees: ₹{assignment.fees ? Number(assignment.fees).toLocaleString('en-IN') : '0'} + OPE: ₹{assignment.ope ? Number(assignment.ope).toLocaleString('en-IN') : '0'}
                       </p>
                     </div>
                     <Button onClick={() => handleCreateInvoice(assignment)}>
@@ -307,10 +307,10 @@ export default function PaymentsDashboard() {
                         <div className="text-sm text-muted-foreground">{invoice.assignment?.branch_name}</div>
                       </div>
                     </TableCell>
-                    <TableCell>{new Date(invoice.invoice_date).toLocaleDateString('en-IN')}</TableCell>
-                    <TableCell>₹{Number(invoice.total_amount).toLocaleString('en-IN')}</TableCell>
-                    <TableCell>₹{Number(invoice.tds_amount).toLocaleString('en-IN')}</TableCell>
-                    <TableCell className="font-semibold">₹{Number(invoice.net_payable).toLocaleString('en-IN')}</TableCell>
+                    <TableCell>{invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString('en-IN') : 'N/A'}</TableCell>
+                    <TableCell>₹{invoice.total_amount ? Number(invoice.total_amount).toLocaleString('en-IN') : '0'}</TableCell>
+                    <TableCell>₹{invoice.tds_amount ? Number(invoice.tds_amount).toLocaleString('en-IN') : '0'}</TableCell>
+                    <TableCell className="font-semibold">₹{invoice.net_payable ? Number(invoice.net_payable).toLocaleString('en-IN') : '0'}</TableCell>
                     <TableCell>
                       <StatusBadge status={invoice.payment_status} />
                     </TableCell>
