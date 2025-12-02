@@ -210,6 +210,8 @@ export default function AuditorDashboard() {
   const uniqueStates = [...new Set(openAssignments.map(a => a.state))].filter(Boolean);
   const uniqueCities = [...new Set(openAssignments.map(a => a.city))].filter(Boolean);
   const uniqueAuditTypes = [...new Set(openAssignments.map(a => a.audit_type))].filter(Boolean);
+
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
