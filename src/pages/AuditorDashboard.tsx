@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NotificationBell } from '@/components/NotificationBell';
+import { GPSCheckInOut } from '@/components/GPSCheckInOut';
 
 export default function AuditorDashboard() {
   const { signOut, user } = useAuth();
@@ -37,6 +38,7 @@ export default function AuditorDashboard() {
   const [selectedAssignmentForReport, setSelectedAssignmentForReport] = useState<any>(null);
   const [completionStatus, setCompletionStatus] = useState<string>('completed');
   const [incompleteReason, setIncompleteReason] = useState<string>('');
+  const [selectedReportFile, setSelectedReportFile] = useState<File | null>(null);
 
   useEffect(() => {
     checkKycStatus();
@@ -131,21 +133,30 @@ export default function AuditorDashboard() {
     setSelectedAssignmentForReport(assignment);
     setCompletionStatus('completed');
     setIncompleteReason('');
+    setSelectedReportFile(null);
     setReportDialogOpen(true);
   };
 
-  const handleReportUpload = async (file: File) => {
-    if (!selectedAssignmentForReport) return;
+  const handleReportSubmit = async () => {
+    if (!selectedAssignmentForReport || !selectedReportFile) {
+      toast.error('Please select a file to upload');
+      return;
+    }
+
+    if (completionStatus === 'incomplete' && !incompleteReason.trim()) {
+      toast.error('Please provide a reason for incomplete audit');
+      return;
+    }
     
     setUploadingReport(selectedAssignmentForReport.id);
     try {
-      const fileExt = file.name.split('.').pop();
+      const fileExt = selectedReportFile.name.split('.').pop();
       const fileName = `${selectedAssignmentForReport.id}-${Date.now()}.${fileExt}`;
       const filePath = `reports/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('kyc-documents')
-        .upload(filePath, file);
+        .upload(filePath, selectedReportFile);
 
       if (uploadError) throw uploadError;
 
@@ -175,6 +186,7 @@ export default function AuditorDashboard() {
       toast.success('Report uploaded successfully!');
       setReportDialogOpen(false);
       setSelectedAssignmentForReport(null);
+      setSelectedReportFile(null);
       fetchData();
     } catch (error: any) {
       toast.error(error.message);
@@ -495,10 +507,20 @@ export default function AuditorDashboard() {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-sm space-y-2">
+                        <div className="text-sm space-y-4">
                           <div>Location: {assignment.city}, {assignment.state}</div>
                           <div>Audit Date: {assignment.audit_date ? new Date(assignment.audit_date).toLocaleDateString('en-IN') : 'N/A'}</div>
                           {assignment.fees && <div className="font-semibold text-primary">Fees: ₹{Number(assignment.fees).toLocaleString('en-IN')}</div>}
+                          
+                          {/* GPS Check-In/Out */}
+                          {assignment.status === 'allotted' && (
+                            <GPSCheckInOut
+                              assignmentId={assignment.id}
+                              checkInTime={assignment.check_in_time}
+                              checkOutTime={assignment.check_out_time}
+                              onUpdate={fetchData}
+                            />
+                          )}
                           
                           {assignment.status === 'allotted' && !assignment.report_url && (
                             <Button
@@ -581,18 +603,35 @@ export default function AuditorDashboard() {
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
-                    if (completionStatus === 'incomplete' && !incompleteReason.trim()) {
-                      toast.error('Please provide a reason for incomplete audit');
-                      return;
-                    }
-                    handleReportUpload(file);
+                    setSelectedReportFile(file);
                   }
                 }}
                 disabled={uploadingReport !== null}
               />
+              {selectedReportFile && (
+                <div className="text-sm text-muted-foreground">
+                  Selected: {selectedReportFile.name}
+                </div>
+              )}
               {uploadingReport && (
                 <div className="text-sm text-muted-foreground">Uploading...</div>
               )}
+            </div>
+            
+            <div className="flex justify-end gap-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setReportDialogOpen(false)}
+                disabled={uploadingReport !== null}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleReportSubmit}
+                disabled={uploadingReport !== null || !selectedReportFile}
+              >
+                {uploadingReport ? 'Submitting...' : 'Submit Report'}
+              </Button>
             </div>
           </div>
         </DialogContent>
