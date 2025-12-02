@@ -76,6 +76,12 @@ export type Database = {
           audit_type: string
           auditor_rating: number | null
           branch_name: string
+          check_in_lat: number | null
+          check_in_lng: number | null
+          check_in_time: string | null
+          check_out_lat: number | null
+          check_out_lng: number | null
+          check_out_time: string | null
           city: string
           client_name: string
           completed_at: string | null
@@ -104,6 +110,12 @@ export type Database = {
           audit_type: string
           auditor_rating?: number | null
           branch_name: string
+          check_in_lat?: number | null
+          check_in_lng?: number | null
+          check_in_time?: string | null
+          check_out_lat?: number | null
+          check_out_lng?: number | null
+          check_out_time?: string | null
           city: string
           client_name: string
           completed_at?: string | null
@@ -132,6 +144,12 @@ export type Database = {
           audit_type?: string
           auditor_rating?: number | null
           branch_name?: string
+          check_in_lat?: number | null
+          check_in_lng?: number | null
+          check_in_time?: string | null
+          check_out_lat?: number | null
+          check_out_lng?: number | null
+          check_out_time?: string | null
           city?: string
           client_name?: string
           completed_at?: string | null

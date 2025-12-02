@@ -18,6 +18,7 @@ import { AssignmentFilters } from '@/components/AssignmentFilters';
 import { DashboardAnalytics } from '@/components/DashboardAnalytics';
 import { NotificationBell } from '@/components/NotificationBell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AuditorsList } from '@/components/AuditorsList';
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
@@ -724,23 +725,194 @@ export default function AdminDashboard() {
         <BulkUploadDialog userId={user?.id || ''} onSuccess={fetchData} />
         </div>
 
-        {/* Filters */}
-        <AssignmentFilters
-          filterStatus={filterStatus}
-          filterState={filterState}
-          filterCity={filterCity}
-          filterAuditType={filterAuditType}
-          filterDateFrom={filterDateFrom}
-          filterDateTo={filterDateTo}
-          onFilterChange={handleFilterChange}
-          onReset={resetFilters}
-          states={uniqueStates}
-          cities={uniqueCities}
-          auditTypes={uniqueAuditTypes}
-        />
+        {/* Main Tabs */}
+        <Tabs defaultValue="assignments" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="assignments">Assignments</TabsTrigger>
+            <TabsTrigger value="auditors">Auditors</TabsTrigger>
+            <TabsTrigger value="applications">Applications</TabsTrigger>
+            <TabsTrigger value="kyc">KYC Approvals</TabsTrigger>
+          </TabsList>
 
-        {/* Pending KYC Approvals */}
-        {pendingKyc.length > 0 && (
+          <TabsContent value="assignments" className="space-y-4">
+            {/* Filters */}
+            <AssignmentFilters
+              filterStatus={filterStatus}
+              filterState={filterState}
+              filterCity={filterCity}
+              filterAuditType={filterAuditType}
+              filterDateFrom={filterDateFrom}
+              filterDateTo={filterDateTo}
+              onFilterChange={handleFilterChange}
+              onReset={resetFilters}
+              states={uniqueStates}
+              cities={uniqueCities}
+              auditTypes={uniqueAuditTypes}
+            />
+
+            {/* All Assignments */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>All Assignments</CardTitle>
+                    <CardDescription>Manage all audit assignments</CardDescription>
+                  </div>
+                  {selectedAssignments.length > 0 && (
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setShowBulkActions(!showBulkActions)}
+                    >
+                      Bulk Actions ({selectedAssignments.length} selected)
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {showBulkActions && selectedAssignments.length > 0 && (
+                  <div className="p-4 border rounded-lg bg-muted/50 space-y-3">
+                    <h4 className="font-medium">Bulk Actions</h4>
+                    <div className="flex gap-4 items-end">
+                      <div className="flex-1">
+                        <Label>Update Status</Label>
+                        <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="allotted">Allotted</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button onClick={handleBulkStatusUpdate}>
+                        Update Status
+                      </Button>
+                      <Button variant="outline" onClick={handleBulkReassign}>
+                        Clear Allocations
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => {
+                          setSelectedAssignments([]);
+                          setShowBulkActions(false);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedAssignments.length === filteredAssignments.length && filteredAssignments.length > 0}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
+                      <TableHead>Assign #</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Branch</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Fees</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Rating</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAssignments.map((assignment) => (
+                      <TableRow key={assignment.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedAssignments.includes(assignment.id)}
+                            onCheckedChange={() => toggleAssignmentSelection(assignment.id)}
+                          />
+                        </TableCell>
+                        <TableCell className="text-xs font-mono">{assignment.assignment_number}</TableCell>
+                        <TableCell className="font-medium">{assignment.client_name}</TableCell>
+                        <TableCell>{assignment.branch_name}</TableCell>
+                        <TableCell>{assignment.city}, {assignment.state}</TableCell>
+                        <TableCell>{assignment.audit_type}</TableCell>
+                        <TableCell>{new Date(assignment.audit_date).toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell>₹{assignment.fees.toLocaleString('en-IN')}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={assignment.status} />
+                        </TableCell>
+                        <TableCell>
+                          {assignment.auditor_rating ? (
+                            <div className="flex items-center gap-1">
+                              <Star className="h-4 w-4 fill-warning text-warning" />
+                              <span>{assignment.auditor_rating}</span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">Not rated</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            {assignment.status === 'allotted' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleChangeAllocation(assignment.id)}
+                                >
+                                  Change
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => openRatingDialog(assignment.id)}
+                                >
+                                  <Star className="h-3 w-3 mr-1" />
+                                  Complete
+                                </Button>
+                              </>
+                            )}
+                            {assignment.status === 'completed' && assignment.report_url && (
+                              <Button
+                                size="sm"
+                                onClick={() => navigate('/payments')}
+                              >
+                                Pay
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDeleteAssignment(assignment.id)}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="auditors" className="space-y-4">
+            <AuditorsList />
+          </TabsContent>
+
+          <TabsContent value="applications" className="space-y-4">
+            {/* Pending Applications */}
+            {pendingKyc.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6 text-center text-muted-foreground">
+                  No pending KYC approvals at the moment.
+                </CardContent>
+              </Card>
+            ) : (
           <Card>
             <CardHeader>
               <CardTitle>Pending KYC Approvals</CardTitle>
@@ -797,224 +969,76 @@ export default function AdminDashboard() {
               </Table>
             </CardContent>
           </Card>
-        )}
-
-        {/* Pending Applications */}
-        {applications.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Pending Applications</CardTitle>
-              <CardDescription>Review and allot assignments to auditors</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Auditor</TableHead>
-                    <TableHead>Rating</TableHead>
-                    <TableHead>Assignment</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Applied</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {applications.map((app) => (
-                    <TableRow key={app.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{app.auditor?.full_name}</div>
-                          <div className="text-sm text-muted-foreground">{app.auditor?.email}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 fill-warning text-warning" />
-                          <span className="font-medium">{auditorRatings[app.auditor_id]?.toFixed(1) || 'N/A'}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{app.assignment?.client_name}</div>
-                          <div className="text-sm text-muted-foreground">{app.assignment?.branch_name}</div>
-                          <div className="text-xs text-muted-foreground">#{app.assignment?.assignment_number}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>{app.assignment?.city}, {app.assignment?.state}</TableCell>
-                      <TableCell>{new Date(app.applied_at).toLocaleDateString('en-IN')}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleAllotAssignment(app.id, app.assignment_id, app.auditor_id)}
-                          >
-                            Allot
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleDeleteApplication(app.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* All Assignments */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>All Assignments</CardTitle>
-                <CardDescription>Manage all audit assignments</CardDescription>
-              </div>
-              {selectedAssignments.length > 0 && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowBulkActions(!showBulkActions)}
-                >
-                  Bulk Actions ({selectedAssignments.length} selected)
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {showBulkActions && selectedAssignments.length > 0 && (
-              <div className="p-4 border rounded-lg bg-muted/50 space-y-3">
-                <h4 className="font-medium">Bulk Actions</h4>
-                <div className="flex gap-4 items-end">
-                  <div className="flex-1">
-                    <Label>Update Status</Label>
-                    <Select value={bulkStatus} onValueChange={setBulkStatus}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="open">Open</SelectItem>
-                        <SelectItem value="allotted">Allotted</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={handleBulkStatusUpdate}>
-                    Update Status
-                  </Button>
-                  <Button variant="outline" onClick={handleBulkReassign}>
-                    Clear Allocations
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => {
-                      setSelectedAssignments([]);
-                      setShowBulkActions(false);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
             )}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">
-                    <Checkbox
-                      checked={selectedAssignments.length === filteredAssignments.length && filteredAssignments.length > 0}
-                      onCheckedChange={toggleSelectAll}
-                    />
-                  </TableHead>
-                  <TableHead>Assign #</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Fees</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredAssignments.map((assignment) => (
-                  <TableRow key={assignment.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedAssignments.includes(assignment.id)}
-                        onCheckedChange={() => toggleAssignmentSelection(assignment.id)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs font-mono">{assignment.assignment_number}</TableCell>
-                    <TableCell className="font-medium">{assignment.client_name}</TableCell>
-                    <TableCell>{assignment.branch_name}</TableCell>
-                    <TableCell>{assignment.city}, {assignment.state}</TableCell>
-                    <TableCell>{assignment.audit_type}</TableCell>
-                    <TableCell>{new Date(assignment.audit_date).toLocaleDateString('en-IN')}</TableCell>
-                    <TableCell>₹{assignment.fees.toLocaleString('en-IN')}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={assignment.status} />
-                    </TableCell>
-                    <TableCell>
-                      {assignment.auditor_rating ? (
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 fill-warning text-warning" />
-                          <span>{assignment.auditor_rating}</span>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-sm">Not rated</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        {assignment.status === 'allotted' && (
-                          <>
-                            <Button
-                              size="sm"
-                              onClick={() => handleChangeAllocation(assignment.id)}
-                            >
-                              Change
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openRatingDialog(assignment.id)}
-                            >
-                              <Star className="h-3 w-3 mr-1" />
-                              Complete
-                            </Button>
-                          </>
-                        )}
-                        {assignment.status === 'completed' && assignment.report_url && (
-                          <Button
-                            size="sm"
-                            onClick={() => navigate('/payments')}
-                          >
-                            Pay
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteAssignment(assignment.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          </TabsContent>
+
+          <TabsContent value="kyc" className="space-y-4">
+            {pendingKyc.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6 text-center text-muted-foreground">
+                  No pending KYC approvals at the moment.
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Pending KYC Approvals</CardTitle>
+                  <CardDescription>Review and approve auditor registrations</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Qualifications</TableHead>
+                        <TableHead>Experience</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pendingKyc.map((kyc) => (
+                        <TableRow key={kyc.id}>
+                          <TableCell className="font-medium">{kyc.profiles?.full_name || 'N/A'}</TableCell>
+                          <TableCell>{kyc.profiles?.email || 'N/A'}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {kyc.qualifications?.map((q: string) => (
+                                <span key={q} className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs">
+                                  {q}
+                                </span>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>{kyc.experience_years} years</TableCell>
+                          <TableCell>{kyc.base_city}, {kyc.base_state}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleKycApproval(kyc.user_id, 'approved')}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleRejectKyc(kyc.user_id)}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Rating Dialog */}
