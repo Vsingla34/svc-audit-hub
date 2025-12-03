@@ -821,6 +821,8 @@ export default function AdminDashboard() {
                       <TableHead>Type</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Fees</TableHead>
+                      <TableHead>Check-In</TableHead>
+                      <TableHead>Check-Out</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Rating</TableHead>
                       <TableHead>Actions</TableHead>
@@ -842,6 +844,30 @@ export default function AdminDashboard() {
                         <TableCell>{assignment.audit_type}</TableCell>
                         <TableCell>{new Date(assignment.audit_date).toLocaleDateString('en-IN')}</TableCell>
                         <TableCell>₹{assignment.fees.toLocaleString('en-IN')}</TableCell>
+                        <TableCell>
+                          {assignment.check_in_time ? (
+                            <div className="text-xs">
+                              <div>{new Date(assignment.check_in_time).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</div>
+                              {assignment.check_in_lat && (
+                                <div className="text-muted-foreground">📍 {Number(assignment.check_in_lat).toFixed(4)}, {Number(assignment.check_in_lng).toFixed(4)}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {assignment.check_out_time ? (
+                            <div className="text-xs">
+                              <div>{new Date(assignment.check_out_time).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}</div>
+                              {assignment.check_out_lat && (
+                                <div className="text-muted-foreground">📍 {Number(assignment.check_out_lat).toFixed(4)}, {Number(assignment.check_out_lng).toFixed(4)}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">-</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <StatusBadge status={assignment.status} />
                         </TableCell>
