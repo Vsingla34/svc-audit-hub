@@ -905,70 +905,77 @@ export default function AdminDashboard() {
           </TabsContent>
 
           <TabsContent value="applications" className="space-y-4">
-            {/* Pending Applications */}
-            {pendingKyc.length === 0 ? (
+            {/* Pending Applications for Allotment */}
+            {applications.length === 0 ? (
               <Card>
                 <CardContent className="pt-6 text-center text-muted-foreground">
-                  No pending KYC approvals at the moment.
+                  No pending applications at the moment.
                 </CardContent>
               </Card>
             ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Pending KYC Approvals</CardTitle>
-              <CardDescription>Review and approve auditor registrations</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Qualifications</TableHead>
-                    <TableHead>Experience</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pendingKyc.map((kyc) => (
-                    <TableRow key={kyc.id}>
-                      <TableCell className="font-medium">{kyc.profiles?.full_name || 'N/A'}</TableCell>
-                      <TableCell>{kyc.profiles?.email || 'N/A'}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {kyc.qualifications?.map((q: string) => (
-                            <span key={q} className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs">
-                              {q}
-                            </span>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>{kyc.experience_years} years</TableCell>
-                      <TableCell>{kyc.base_city}, {kyc.base_state}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleKycApproval(kyc.user_id, 'approved')}
-                          >
-                            Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => handleRejectKyc(kyc.user_id)}
-                          >
-                            Reject
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Pending Applications</CardTitle>
+                  <CardDescription>Review and allot assignments to auditors who have applied</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Assignment #</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Branch</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Auditor Name</TableHead>
+                        <TableHead>Auditor Email</TableHead>
+                        <TableHead>Rating</TableHead>
+                        <TableHead>Applied At</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {applications.map((app: any) => (
+                        <TableRow key={app.id}>
+                          <TableCell className="text-xs font-mono">{app.assignment?.assignment_number || 'N/A'}</TableCell>
+                          <TableCell className="font-medium">{app.assignment?.client_name || 'N/A'}</TableCell>
+                          <TableCell>{app.assignment?.branch_name || 'N/A'}</TableCell>
+                          <TableCell>{app.assignment?.city}, {app.assignment?.state}</TableCell>
+                          <TableCell className="font-medium">{app.auditor?.full_name || 'Unknown'}</TableCell>
+                          <TableCell>{app.auditor?.email || 'N/A'}</TableCell>
+                          <TableCell>
+                            {auditorRatings[app.auditor_id] ? (
+                              <div className="flex items-center gap-1">
+                                <Star className="h-4 w-4 fill-warning text-warning" />
+                                <span>{auditorRatings[app.auditor_id]}</span>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">No rating</span>
+                            )}
+                          </TableCell>
+                          <TableCell>{new Date(app.applied_at).toLocaleDateString('en-IN')}</TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleAllotAssignment(app.id, app.assignment_id, app.auditor_id)}
+                              >
+                                Allot
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteApplication(app.id)}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 
