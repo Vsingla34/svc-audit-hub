@@ -25,6 +25,7 @@ export default function PaymentsDashboard() {
     open: false,
     invoice: null,
   });
+  const [paymentStatus, setPaymentStatus] = useState<string>('');
 
   const [stats, setStats] = useState({
     total: 0,
@@ -335,7 +336,10 @@ export default function PaymentsDashboard() {
       </main>
 
       {/* Payment Update Dialog */}
-      <Dialog open={paymentDialog.open} onOpenChange={(open) => setPaymentDialog({ open, invoice: null })}>
+      <Dialog open={paymentDialog.open} onOpenChange={(open) => {
+        setPaymentDialog({ open, invoice: null });
+        setPaymentStatus('');
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Update Payment Status</DialogTitle>
@@ -349,13 +353,7 @@ export default function PaymentsDashboard() {
             </div>
             <div className="space-y-2">
               <Label>Status</Label>
-              <Select
-                onValueChange={(value) => {
-                  if (value === 'paid' || value === 'approved' || value === 'rejected') {
-                    handleUpdatePayment(paymentDialog.invoice?.id, value);
-                  }
-                }}
-              >
+              <Select value={paymentStatus} onValueChange={setPaymentStatus}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select status" />
                 </SelectTrigger>
@@ -366,6 +364,28 @@ export default function PaymentsDashboard() {
                   <SelectItem value="rejected">Reject</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button 
+                className="flex-1" 
+                onClick={() => {
+                  if (paymentStatus && paymentDialog.invoice?.id) {
+                    handleUpdatePayment(paymentDialog.invoice.id, paymentStatus);
+                  }
+                }}
+                disabled={!paymentStatus}
+              >
+                Submit
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setPaymentDialog({ open: false, invoice: null });
+                  setPaymentStatus('');
+                }}
+              >
+                Cancel
+              </Button>
             </div>
           </div>
         </DialogContent>
