@@ -44,21 +44,7 @@ export default function Auth() {
       if (error) throw error;
 
       if (data.user) {
-        // All new users default to 'auditor' role for security
-        // Admin role must be assigned manually by existing admin
-        const { error: roleError } = await supabase
-          .from('user_roles')
-          .insert({ user_id: data.user.id, role: 'auditor' });
-
-        if (roleError) throw roleError;
-
-        // Create auditor profile for all new users
-        const { error: profileError } = await supabase
-          .from('auditor_profiles')
-          .insert({ user_id: data.user.id });
-
-        if (profileError) throw profileError;
-
+        // Role and auditor profile are automatically created by database trigger
         toast.success('Account created successfully! Please complete your profile after signing in.');
         setEmail('');
         setPassword('');
