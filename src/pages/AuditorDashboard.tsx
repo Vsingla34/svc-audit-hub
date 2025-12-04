@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { AssignmentCard } from '@/components/AssignmentCard';
-import { LogOut, Briefcase, Clock, CheckCircle, AlertCircle, DollarSign, ArrowLeft } from 'lucide-react';
+import { LogOut, Briefcase, Clock, CheckCircle, AlertCircle, DollarSign, ArrowLeft, BarChart3 } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -17,6 +17,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { NotificationBell } from '@/components/NotificationBell';
 import { GPSCheckInOut } from '@/components/GPSCheckInOut';
+import { AuditorAnalytics } from '@/components/AuditorAnalytics';
 
 export default function AuditorDashboard() {
   const { signOut, user } = useAuth();
@@ -330,10 +331,14 @@ export default function AuditorDashboard() {
 
         {/* Main Content Tabs */}
         <Tabs defaultValue="available" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="available">Available Jobs</TabsTrigger>
             <TabsTrigger value="applications">My Applications</TabsTrigger>
             <TabsTrigger value="assignments">My Assignments</TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-1">
+              <BarChart3 className="h-3 w-3" />
+              Analytics
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="available" className="space-y-4">
@@ -547,6 +552,11 @@ export default function AuditorDashboard() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics">
+            {user && <AuditorAnalytics userId={user.id} />}
           </TabsContent>
         </Tabs>
       </main>

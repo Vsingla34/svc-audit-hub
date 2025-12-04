@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft, MapPin, Star, BarChart3 } from 'lucide-react';
+import { Plus, LogOut, Users, Briefcase, CheckCircle, Clock, DollarSign, ArrowLeft, MapPin, Star, BarChart3, Shield } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { useNavigate } from 'react-router-dom';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -19,6 +19,8 @@ import { DashboardAnalytics } from '@/components/DashboardAnalytics';
 import { NotificationBell } from '@/components/NotificationBell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AuditorsList } from '@/components/AuditorsList';
+import { AssignmentSearchExport } from '@/components/AssignmentSearchExport';
+import { UserRoleManagement } from '@/components/UserRoleManagement';
 
 export default function AdminDashboard() {
   const { signOut, user } = useAuth();
@@ -45,6 +47,7 @@ export default function AdminDashboard() {
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [auditorRatings, setAuditorRatings] = useState<Record<string, number>>({});
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Form state
   const [formData, setFormData] = useState({
@@ -463,6 +466,16 @@ export default function AdminDashboard() {
     if (filterAuditType !== 'all' && assignment.audit_type !== filterAuditType) return false;
     if (filterDateFrom && new Date(assignment.audit_date) < new Date(filterDateFrom)) return false;
     if (filterDateTo && new Date(assignment.audit_date) > new Date(filterDateTo)) return false;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = 
+        assignment.client_name?.toLowerCase().includes(query) ||
+        assignment.branch_name?.toLowerCase().includes(query) ||
+        assignment.city?.toLowerCase().includes(query) ||
+        assignment.state?.toLowerCase().includes(query) ||
+        assignment.assignment_number?.toLowerCase().includes(query);
+      if (!matchesSearch) return false;
+    }
     return true;
   });
 
@@ -727,14 +740,25 @@ export default function AdminDashboard() {
 
         {/* Main Tabs */}
         <Tabs defaultValue="assignments" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="assignments">Assignments</TabsTrigger>
             <TabsTrigger value="auditors">Auditors</TabsTrigger>
             <TabsTrigger value="applications">Applications</TabsTrigger>
             <TabsTrigger value="kyc">KYC Approvals</TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-1">
+              <Shield className="h-3 w-3" />
+              User Roles
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="assignments" className="space-y-4">
+            {/* Search & Export */}
+            <AssignmentSearchExport
+              assignments={filteredAssignments}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
+            
             {/* Filters */}
             <AssignmentFilters
               filterStatus={filterStatus}
@@ -1070,6 +1094,11 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* User Roles Tab */}
+          <TabsContent value="users">
+            <UserRoleManagement />
           </TabsContent>
         </Tabs>
       </main>
