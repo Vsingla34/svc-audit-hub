@@ -10,13 +10,67 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// HTML sanitization helper
+function sanitizeHtml(str: string): string {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .slice(0, 500);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    // Verify JWT and get the caller's identity
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('Missing authorization header');
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+      );
+    }
+
+    // Create client with user's JWT to verify identity
+    const supabaseUser = createClient(
+      SUPABASE_URL,
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    // Get the authenticated user
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    if (userError || !user) {
+      console.error('Invalid or expired token:', userError?.message);
+      return new Response(
+        JSON.stringify({ error: 'Invalid or expired token' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+      );
+    }
+
+    // Use service role client for database operations
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Check if caller is an admin
+    const { data: isAdmin, error: roleError } = await supabase
+      .rpc('has_role', { _user_id: user.id, _role: 'admin' });
+
+    if (roleError || !isAdmin) {
+      console.error('Unauthorized: Only admins can trigger deadline reminders');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Admin access required' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
+      );
+    }
+
+    console.log('Admin', user.id, 'triggering deadline reminders');
 
     // Find assignments with deadlines within 3 days
     const threeDaysFromNow = new Date();
@@ -34,7 +88,32 @@ serve(async (req) => {
 
     if (error) throw error;
 
+    if (!assignments || assignments.length === 0) {
+      console.log('No assignments with upcoming deadlines found');
+      return new Response(
+        JSON.stringify({ message: 'No assignments with upcoming deadlines found', count: 0 }),
+        {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
+    console.log(`Found ${assignments.length} assignments with upcoming deadlines`);
+
     const emailPromises = assignments.map(async (assignment: any) => {
+      // Skip if auditor email is not available
+      if (!assignment.auditor?.email) {
+        console.warn('Skipping assignment without auditor email:', assignment.id);
+        return null;
+      }
+
+      // Sanitize all inputs
+      const safeFullName = sanitizeHtml(assignment.auditor.full_name || 'Auditor');
+      const safeClientName = sanitizeHtml(assignment.client_name || '');
+      const safeBranchName = sanitizeHtml(assignment.branch_name || '');
+      const safeDeadline = new Date(assignment.deadline_date).toLocaleDateString('en-IN');
+
       const emailHtml = `
         <!DOCTYPE html>
         <html>
@@ -54,13 +133,13 @@ serve(async (req) => {
                 <h1>⚠️ Deadline Reminder</h1>
               </div>
               <div class="content">
-                <p>Dear ${assignment.auditor.full_name},</p>
+                <p>Dear ${safeFullName},</p>
                 
                 <div class="alert">
                   <h3>Your assignment deadline is approaching!</h3>
-                  <p><strong>Client:</strong> ${assignment.client_name}</p>
-                  <p><strong>Branch:</strong> ${assignment.branch_name}</p>
-                  <p><strong>Deadline:</strong> ${new Date(assignment.deadline_date).toLocaleDateString('en-IN')}</p>
+                  <p><strong>Client:</strong> ${safeClientName}</p>
+                  <p><strong>Branch:</strong> ${safeBranchName}</p>
+                  <p><strong>Deadline:</strong> ${safeDeadline}</p>
                 </div>
                 
                 <p>Please ensure you complete and submit your audit report before the deadline.</p>
@@ -74,32 +153,45 @@ serve(async (req) => {
         </html>
       `;
 
-      return fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-        },
-        body: JSON.stringify({
-          from: 'Audit Portal <notifications@resend.dev>',
-          to: [assignment.auditor.email],
-          subject: '⚠️ Assignment Deadline Reminder - Post Audit Portal',
-          html: emailHtml,
-        }),
-      });
+      try {
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${RESEND_API_KEY}`,
+          },
+          body: JSON.stringify({
+            from: 'Audit Portal <notifications@resend.dev>',
+            to: [assignment.auditor.email],
+            subject: '⚠️ Assignment Deadline Reminder - Post Audit Portal',
+            html: emailHtml,
+          }),
+        });
+
+        const result = await res.json();
+        console.log('Email sent to:', assignment.auditor.email, 'Result:', result);
+        return result;
+      } catch (emailError) {
+        console.error('Failed to send email to:', assignment.auditor.email, emailError);
+        return null;
+      }
     });
 
-    await Promise.all(emailPromises);
+    const results = await Promise.all(emailPromises);
+    const successCount = results.filter(r => r !== null).length;
+
+    console.log(`Successfully sent ${successCount} deadline reminders`);
 
     return new Response(
-      JSON.stringify({ message: `Sent ${emailPromises.length} deadline reminders` }),
+      JSON.stringify({ message: `Sent ${successCount} deadline reminders`, count: successCount }),
       {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
     );
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Error in send-deadline-reminder:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

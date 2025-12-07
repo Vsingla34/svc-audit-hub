@@ -21,13 +21,145 @@ interface NotificationRequest {
   };
 }
 
+// Input validation helpers
+function validateEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+function sanitizeHtml(str: string): string {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+    .slice(0, 500);
+}
+
+function validateDate(dateStr: string): boolean {
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime());
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { to, auditorName, assignmentDetails }: NotificationRequest = await req.json();
+    // Verify JWT and get the caller's identity
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('Missing authorization header');
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+      );
+    }
+
+    // Create client with user's JWT to verify identity
+    const supabaseUser = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    // Get the authenticated user
+    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    if (userError || !user) {
+      console.error('Invalid or expired token:', userError?.message);
+      return new Response(
+        JSON.stringify({ error: 'Invalid or expired token' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+      );
+    }
+
+    // Use service role client for database operations
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Check if caller is an admin
+    const { data: isAdmin, error: roleError } = await supabase
+      .rpc('has_role', { _user_id: user.id, _role: 'admin' });
+
+    if (roleError || !isAdmin) {
+      console.error('Unauthorized: Only admins can send assignment notifications');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized: Admin access required' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
+      );
+    }
+
+    // Parse and validate input
+    const body = await req.json();
+    const { to, auditorName, assignmentDetails }: NotificationRequest = body;
+
+    // Validate email
+    if (!to || !validateEmail(to)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid email address' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+
+    // Verify email belongs to an actual auditor
+    const { data: auditorProfile, error: auditorError } = await supabase
+      .from('profiles')
+      .select('id, email')
+      .eq('email', to)
+      .single();
+
+    if (auditorError || !auditorProfile) {
+      console.error('Email does not belong to a registered auditor:', to);
+      return new Response(
+        JSON.stringify({ error: 'Email does not belong to a registered user' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+
+    // Validate required fields
+    if (!auditorName || typeof auditorName !== 'string') {
+      return new Response(
+        JSON.stringify({ error: 'Invalid auditor name' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+
+    if (!assignmentDetails || typeof assignmentDetails !== 'object') {
+      return new Response(
+        JSON.stringify({ error: 'Invalid assignment details' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+
+    if (!assignmentDetails.auditDate || !validateDate(assignmentDetails.auditDate)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid audit date' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+
+    if (typeof assignmentDetails.fees !== 'number' || assignmentDetails.fees < 0) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid fees amount' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      );
+    }
+
+    console.log('Admin', user.id, 'sending assignment notification to:', to);
+
+    // Sanitize all string inputs before using in HTML
+    const safeAuditorName = sanitizeHtml(auditorName);
+    const safeClientName = sanitizeHtml(assignmentDetails.clientName || '');
+    const safeBranchName = sanitizeHtml(assignmentDetails.branchName || '');
+    const safeCity = sanitizeHtml(assignmentDetails.city || '');
+    const safeState = sanitizeHtml(assignmentDetails.state || '');
+    const safeAuditDate = new Date(assignmentDetails.auditDate).toLocaleDateString('en-IN');
+    const safeFees = Number(assignmentDetails.fees).toLocaleString('en-IN');
 
     const emailHtml = `
       <!DOCTYPE html>
@@ -50,30 +182,30 @@ serve(async (req) => {
               <h1>🎉 Assignment Allotted!</h1>
             </div>
             <div class="content">
-              <p>Dear ${auditorName},</p>
+              <p>Dear ${safeAuditorName},</p>
               <p>Congratulations! You have been allotted a new audit assignment.</p>
               
               <div class="details">
                 <h3>Assignment Details</h3>
                 <div class="detail-row">
                   <span class="label">Client:</span>
-                  <span>${assignmentDetails.clientName}</span>
+                  <span>${safeClientName}</span>
                 </div>
                 <div class="detail-row">
                   <span class="label">Branch:</span>
-                  <span>${assignmentDetails.branchName}</span>
+                  <span>${safeBranchName}</span>
                 </div>
                 <div class="detail-row">
                   <span class="label">Location:</span>
-                  <span>${assignmentDetails.city}, ${assignmentDetails.state}</span>
+                  <span>${safeCity}, ${safeState}</span>
                 </div>
                 <div class="detail-row">
                   <span class="label">Audit Date:</span>
-                  <span>${new Date(assignmentDetails.auditDate).toLocaleDateString('en-IN')}</span>
+                  <span>${safeAuditDate}</span>
                 </div>
                 <div class="detail-row">
                   <span class="label">Fees:</span>
-                  <span>₹${assignmentDetails.fees.toLocaleString('en-IN')}</span>
+                  <span>₹${safeFees}</span>
                 </div>
               </div>
               
@@ -103,13 +235,15 @@ serve(async (req) => {
     });
 
     const data = await res.json();
+    console.log('Email sent successfully to:', to);
 
     return new Response(JSON.stringify(data), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Error in send-assignment-notification:', error);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
