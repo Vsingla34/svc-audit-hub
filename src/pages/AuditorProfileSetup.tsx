@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -26,6 +27,7 @@ export default function AuditorProfileSetup() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ pan: false, gst: false, resume: false });
   const [kycStatus, setKycStatus] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     qualifications: [] as string[],
@@ -56,6 +58,7 @@ export default function AuditorProfileSetup() {
 
     if (data) {
       setKycStatus(data.kyc_status);
+      setRejectionReason(data.rejection_reason);
       setFormData({
         qualifications: data.qualifications || [],
         pan_card: data.pan_card || '',
@@ -264,6 +267,18 @@ export default function AuditorProfileSetup() {
             </div>
           </CardHeader>
           <CardContent>
+            {/* Rejection Reason Alert */}
+            {kycStatus === 'rejected' && rejectionReason && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Your KYC was rejected</AlertTitle>
+                <AlertDescription>
+                  <strong>Reason:</strong> {rejectionReason}
+                  <p className="mt-2 text-sm">Please update your profile and resubmit for approval.</p>
+                </AlertDescription>
+              </Alert>
+            )}
+            
             <form onSubmit={handleSubmitForApproval} className="space-y-6">
               {/* Qualifications */}
               <div className="space-y-2">
