@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -22,7 +23,9 @@ export default function AuditorProfileSetup() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ pan: false, gst: false, resume: false });
+  const [kycStatus, setKycStatus] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     qualifications: [] as string[],
@@ -52,6 +55,7 @@ export default function AuditorProfileSetup() {
       .maybeSingle();
 
     if (data) {
+      setKycStatus(data.kyc_status);
       setFormData({
         qualifications: data.qualifications || [],
         pan_card: data.pan_card || '',
@@ -138,9 +142,50 @@ export default function AuditorProfileSetup() {
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSaveDraft = async () => {
+    if (!user) return;
+
+    setSavingDraft(true);
+
+    const { error } = await supabase
+      .from('auditor_profiles')
+      .upsert({
+        user_id: user.id,
+        ...formData,
+        kyc_status: kycStatus || 'draft',
+      });
+
+    setSavingDraft(false);
+
+    if (error) {
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({
+      title: 'Draft saved',
+      description: 'Your profile has been saved as draft',
+    });
+    setKycStatus('draft');
+  };
+
+  const handleSubmitForApproval = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    // Validation
+    if (!formData.pan_card || !formData.base_city || !formData.base_state) {
+      toast({
+        title: 'Incomplete profile',
+        description: 'Please fill in all required fields (PAN, Base City, Base State)',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setLoading(true);
 
@@ -165,26 +210,61 @@ export default function AuditorProfileSetup() {
 
     toast({
       title: 'Profile submitted',
-      description: 'Your KYC is under review by admin',
+      description: 'Your profile has been submitted for admin approval',
     });
-    navigate('/dashboard');
+    setKycStatus('pending');
   };
+
+  const getStatusBadge = () => {
+    switch (kycStatus) {
+      case 'approved':
+        return <Badge variant="default" className="bg-green-500">Approved</Badge>;
+      case 'pending':
+        return <Badge variant="secondary">Pending Approval</Badge>;
+      case 'rejected':
+        return <Badge variant="destructive">Rejected - Please Update</Badge>;
+      case 'draft':
+        return <Badge variant="outline">Draft</Badge>;
+      default:
+        return <Badge variant="outline">Not Submitted</Badge>;
+    }
+  };
+
+  const isEditable = kycStatus !== 'approved' && kycStatus !== 'pending';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 p-4">
       <div className="max-w-4xl mx-auto py-8">
+        <Button 
+          variant="ghost" 
+          onClick={() => navigate('/dashboard')} 
+          className="mb-4"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Dashboard
+        </Button>
+
         <Card className="border-primary/20">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-6 w-6 text-primary" />
-              Complete Your Auditor Profile
-            </CardTitle>
-            <CardDescription>
-              Fill in your details and upload required documents for KYC verification
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-6 w-6 text-primary" />
+                  My Auditor Profile
+                </CardTitle>
+                <CardDescription>
+                  {isEditable 
+                    ? 'Fill in your details and upload required documents for KYC verification'
+                    : kycStatus === 'pending' 
+                      ? 'Your profile is under review. You cannot make changes until it is processed.'
+                      : 'Your profile has been approved.'}
+                </CardDescription>
+              </div>
+              {getStatusBadge()}
+            </div>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmitForApproval} className="space-y-6">
               {/* Qualifications */}
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
@@ -197,17 +277,18 @@ export default function AuditorProfileSetup() {
                     onChange={(e) => setQualificationInput(e.target.value)}
                     placeholder="Enter qualification"
                     onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addQualification())}
+                    disabled={!isEditable}
                   />
-                  <Button type="button" onClick={addQualification}>Add</Button>
+                  <Button type="button" onClick={addQualification} disabled={!isEditable}>Add</Button>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {formData.qualifications.map((qual) => (
                     <span
                       key={qual}
-                      className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm cursor-pointer hover:bg-primary/20"
-                      onClick={() => removeQualification(qual)}
+                      className={`px-3 py-1 bg-primary/10 text-primary rounded-full text-sm ${isEditable ? 'cursor-pointer hover:bg-primary/20' : ''}`}
+                      onClick={() => isEditable && removeQualification(qual)}
                     >
-                      {qual} ×
+                      {qual} {isEditable && '×'}
                     </span>
                   ))}
                 </div>
@@ -221,18 +302,20 @@ export default function AuditorProfileSetup() {
                   min="0"
                   value={formData.experience_years}
                   onChange={(e) => setFormData({ ...formData, experience_years: parseInt(e.target.value) || 0 })}
+                  disabled={!isEditable}
                   required
                 />
               </div>
 
               {/* PAN Card */}
               <div className="space-y-2">
-                <Label>PAN Card Number</Label>
+                <Label>PAN Card Number *</Label>
                 <Input
                   value={formData.pan_card}
                   onChange={(e) => setFormData({ ...formData, pan_card: e.target.value.toUpperCase() })}
                   placeholder="ABCDE1234F"
                   pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"
+                  disabled={!isEditable}
                   required
                 />
               </div>
@@ -244,6 +327,7 @@ export default function AuditorProfileSetup() {
                   value={formData.gst_number}
                   onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() })}
                   placeholder="22AAAAA0000A1Z5"
+                  disabled={!isEditable}
                 />
               </div>
 
@@ -257,7 +341,7 @@ export default function AuditorProfileSetup() {
                   type="file"
                   accept=".pdf"
                   onChange={(e) => handleFileUpload(e, 'resume')}
-                  disabled={uploading.resume}
+                  disabled={uploading.resume || !isEditable}
                 />
                 {formData.resume_url && (
                   <p className="text-sm text-muted-foreground">✓ Resume uploaded</p>
@@ -269,21 +353,23 @@ export default function AuditorProfileSetup() {
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2">
                     <MapPin className="h-4 w-4" />
-                    Base City
+                    Base City *
                   </Label>
                   <Input
                     value={formData.base_city}
                     onChange={(e) => setFormData({ ...formData, base_city: e.target.value })}
                     placeholder="Mumbai"
+                    disabled={!isEditable}
                     required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Base State</Label>
+                  <Label>Base State *</Label>
                   <select
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background"
+                    className="w-full h-10 px-3 rounded-md border border-input bg-background disabled:opacity-50"
                     value={formData.base_state}
                     onChange={(e) => setFormData({ ...formData, base_state: e.target.value })}
+                    disabled={!isEditable}
                     required
                   >
                     <option value="">Select State</option>
@@ -303,6 +389,7 @@ export default function AuditorProfileSetup() {
                   max="1000"
                   value={formData.willing_to_travel_radius}
                   onChange={(e) => setFormData({ ...formData, willing_to_travel_radius: parseInt(e.target.value) || 0 })}
+                  disabled={!isEditable}
                   required
                 />
               </div>
@@ -312,11 +399,12 @@ export default function AuditorProfileSetup() {
                 <Label>Preferred States for Work</Label>
                 <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 border rounded-md">
                   {INDIAN_STATES.map((state) => (
-                    <label key={state} className="flex items-center gap-2 cursor-pointer hover:bg-accent p-2 rounded">
+                    <label key={state} className={`flex items-center gap-2 p-2 rounded ${isEditable ? 'cursor-pointer hover:bg-accent' : 'opacity-60'}`}>
                       <input
                         type="checkbox"
                         checked={formData.preferred_states.includes(state)}
-                        onChange={() => toggleState(state)}
+                        onChange={() => isEditable && toggleState(state)}
+                        disabled={!isEditable}
                         className="accent-primary"
                       />
                       <span className="text-sm">{state}</span>
@@ -325,9 +413,35 @@ export default function AuditorProfileSetup() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full" disabled={loading || Object.values(uploading).some(v => v)}>
-                {loading ? 'Submitting...' : 'Submit for KYC Approval'}
-              </Button>
+              {/* Action Buttons */}
+              {isEditable && (
+                <div className="flex gap-4">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    className="flex-1"
+                    onClick={handleSaveDraft}
+                    disabled={savingDraft || loading || Object.values(uploading).some(v => v)}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {savingDraft ? 'Saving...' : 'Save as Draft'}
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    className="flex-1"
+                    disabled={loading || savingDraft || Object.values(uploading).some(v => v)}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    {loading ? 'Submitting...' : 'Submit for Approval'}
+                  </Button>
+                </div>
+              )}
+
+              {kycStatus === 'pending' && (
+                <div className="text-center py-4 text-muted-foreground">
+                  Your profile is under review. You will be notified once it is approved.
+                </div>
+              )}
             </form>
           </CardContent>
         </Card>

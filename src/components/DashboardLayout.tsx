@@ -168,6 +168,7 @@ export const adminNavItems: NavItem[] = [
 
 export const auditorNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard },
+  { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Available Jobs', icon: Briefcase },
   { title: 'My Applications', icon: Clock },
   { title: 'My Assignments', icon: FileCheck },
