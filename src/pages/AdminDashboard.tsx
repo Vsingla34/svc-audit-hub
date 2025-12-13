@@ -52,6 +52,11 @@ export default function AdminDashboard() {
   const [selectedAssignmentForRating, setSelectedAssignmentForRating] = useState<string | null>(null);
   const [tempRating, setTempRating] = useState(0);
   
+  // KYC Rejection Dialog
+  const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
+  const [selectedKycUser, setSelectedKycUser] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  
   // Form state
   const [formData, setFormData] = useState({
     client_name: '', branch_name: '', address: '', city: '', state: '',
@@ -115,13 +120,28 @@ export default function AdminDashboard() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  const handleKycApproval = async (userId: string, status: 'approved' | 'rejected') => {
+  const handleKycApproval = async (userId: string, status: 'approved' | 'rejected', reason?: string) => {
     try {
-      const { error } = await supabase.from('auditor_profiles').update({ kyc_status: status }).eq('user_id', userId);
+      const updateData: any = { kyc_status: status };
+      if (status === 'rejected' && reason) {
+        updateData.rejection_reason = reason;
+      } else if (status === 'approved') {
+        updateData.rejection_reason = null; // Clear any previous rejection reason
+      }
+      const { error } = await supabase.from('auditor_profiles').update(updateData).eq('user_id', userId);
       if (error) throw error;
       toast.success(`KYC ${status} successfully!`);
+      setRejectionDialogOpen(false);
+      setSelectedKycUser(null);
+      setRejectionReason('');
       fetchData();
     } catch (error: any) { toast.error(error.message); }
+  };
+
+  const openRejectionDialog = (userId: string) => {
+    setSelectedKycUser(userId);
+    setRejectionReason('');
+    setRejectionDialogOpen(true);
   };
 
   const handleAllotAssignment = async (applicationId: string, assignmentId: string, auditorId: string) => {
@@ -516,7 +536,7 @@ export default function AdminDashboard() {
                         <TableCell>
                           <div className="flex gap-2">
                             <Button size="sm" onClick={() => handleKycApproval(kyc.user_id, 'approved')}>Approve</Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleKycApproval(kyc.user_id, 'rejected')}>Reject</Button>
+                            <Button size="sm" variant="destructive" onClick={() => openRejectionDialog(kyc.user_id)}>Reject</Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -549,6 +569,38 @@ export default function AdminDashboard() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setRatingDialogOpen(false)}>Cancel</Button>
             <Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* KYC Rejection Dialog */}
+      <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject KYC Application</DialogTitle>
+            <DialogDescription>Please provide a reason for rejection. This will be shown to the auditor.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="rejection-reason">Rejection Reason *</Label>
+              <textarea
+                id="rejection-reason"
+                className="w-full min-h-[100px] px-3 py-2 rounded-md border border-input bg-background text-sm"
+                placeholder="e.g., PAN card number is invalid, Resume not uploaded, etc."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRejectionDialogOpen(false)}>Cancel</Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => selectedKycUser && handleKycApproval(selectedKycUser, 'rejected', rejectionReason)}
+              disabled={!rejectionReason.trim()}
+            >
+              Reject KYC
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

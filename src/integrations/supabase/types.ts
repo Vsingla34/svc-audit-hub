@@ -201,6 +201,7 @@ export type Database = {
           preferred_states: string[] | null
           qualifications: string[] | null
           rating: number | null
+          rejection_reason: string | null
           resume_url: string | null
           updated_at: string | null
           user_id: string
@@ -219,6 +220,7 @@ export type Database = {
           preferred_states?: string[] | null
           qualifications?: string[] | null
           rating?: number | null
+          rejection_reason?: string | null
           resume_url?: string | null
           updated_at?: string | null
           user_id: string
@@ -237,6 +239,7 @@ export type Database = {
           preferred_states?: string[] | null
           qualifications?: string[] | null
           rating?: number | null
+          rejection_reason?: string | null
           resume_url?: string | null
           updated_at?: string | null
           user_id?: string
