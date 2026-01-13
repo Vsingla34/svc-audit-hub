@@ -1,7 +1,5 @@
-import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
-import { Button } from '@/components/ui/button';
 import { NotificationBell } from '@/components/NotificationBell';
 import {
   Sidebar,
@@ -30,6 +28,7 @@ import {
   FileText,
   Clock,
   Menu,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -57,56 +56,91 @@ function AppSidebar({
   activeTab?: string; 
   onTabChange?: (tab: string) => void;
 }) {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-border">
-      <SidebarContent className="pt-4">
+    <Sidebar collapsible="icon" className="border-r-0 bg-sidebar">
+      <SidebarContent className="pt-6 px-3">
+        {/* Logo/Brand */}
+        <div className={cn(
+          "flex items-center gap-3 px-3 mb-8",
+          collapsed && "justify-center"
+        )}>
+          <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center">
+            <Shield className="h-5 w-5 text-sidebar-primary-foreground" />
+          </div>
+          {!collapsed && (
+            <div>
+              <h1 className="font-heading text-base font-semibold text-sidebar-foreground">AuditHub</h1>
+              <p className="text-xs text-sidebar-foreground/60">Management Portal</p>
+            </div>
+          )}
+        </div>
+
         <SidebarGroup>
-          <SidebarGroupLabel className={cn(collapsed && "sr-only")}>
-            Navigation
+          <SidebarGroupLabel className={cn(
+            "text-sidebar-foreground/50 text-xs font-medium uppercase tracking-wider mb-2",
+            collapsed && "sr-only"
+          )}>
+            Menu
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    onClick={() => {
-                      if (item.href) {
-                        navigate(item.href);
-                      } else if (item.onClick) {
-                        item.onClick();
-                      } else if (onTabChange) {
-                        onTabChange(item.title.toLowerCase().replace(/\s+/g, '-'));
-                      }
-                    }}
-                    isActive={activeTab === item.title.toLowerCase().replace(/\s+/g, '-')}
-                    tooltip={item.title}
-                    className="flex items-center gap-3 px-3 py-2"
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    <span className={cn(collapsed && "sr-only")}>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+            <SidebarMenu className="space-y-1">
+              {navItems.map((item) => {
+                const isActive = activeTab === item.title.toLowerCase().replace(/\s+/g, '-');
+                return (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      onClick={() => {
+                        if (item.href) {
+                          navigate(item.href);
+                        } else if (item.onClick) {
+                          item.onClick();
+                        } else if (onTabChange) {
+                          onTabChange(item.title.toLowerCase().replace(/\s+/g, '-'));
+                        }
+                      }}
+                      isActive={isActive}
+                      tooltip={item.title}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+                        "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent",
+                        isActive && "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+                      )}
+                    >
+                      <item.icon className="h-4.5 w-4.5 shrink-0" />
+                      <span className={cn("text-sm font-medium flex-1", collapsed && "sr-only")}>
+                        {item.title}
+                      </span>
+                      {!collapsed && isActive && (
+                        <ChevronRight className="h-4 w-4 opacity-60" />
+                      )}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="mt-auto pb-4">
+        {/* Sign Out at bottom */}
+        <SidebarGroup className="mt-auto pb-6">
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={signOut}
                   tooltip="Sign Out"
-                  className="flex items-center gap-3 px-3 py-2 text-destructive hover:text-destructive"
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+                    "text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10"
+                  )}
                 >
-                  <LogOut className="h-4 w-4 shrink-0" />
-                  <span className={cn(collapsed && "sr-only")}>Sign Out</span>
+                  <LogOut className="h-4.5 w-4.5 shrink-0" />
+                  <span className={cn("text-sm font-medium", collapsed && "sr-only")}>Sign Out</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -131,21 +165,27 @@ export function DashboardLayout({
         
         <div className="flex-1 flex flex-col min-w-0">
           {/* Header */}
-          <header className="sticky top-0 z-10 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60">
-            <div className="flex h-14 items-center gap-4 px-4">
-              <SidebarTrigger className="-ml-1">
-                <Menu className="h-5 w-5" />
+          <header className="sticky top-0 z-10 h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="flex h-full items-center gap-4 px-6">
+              <SidebarTrigger className="-ml-2 p-2 rounded-lg hover:bg-accent transition-colors">
+                <Menu className="h-5 w-5 text-muted-foreground" />
               </SidebarTrigger>
-              <h1 className="text-xl font-semibold text-foreground truncate">{title}</h1>
-              <div className="ml-auto flex items-center gap-2">
+              
+              <div className="flex-1">
+                <h1 className="font-heading text-xl font-semibold text-foreground">{title}</h1>
+              </div>
+              
+              <div className="flex items-center gap-3">
                 <NotificationBell />
               </div>
             </div>
           </header>
 
           {/* Main Content */}
-          <main className="flex-1 overflow-auto p-6">
-            {children}
+          <main className="flex-1 overflow-auto">
+            <div className="p-6 max-w-[1600px] mx-auto">
+              {children}
+            </div>
           </main>
         </div>
       </div>
