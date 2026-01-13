@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { z } from 'zod';
+import { Shield, ArrowLeft } from 'lucide-react';
 
 // Validation schemas
 const emailSchema = z.string().trim().email('Please enter a valid email address').max(255, 'Email must be less than 255 characters');
@@ -111,7 +112,6 @@ export default function Auth() {
       if (error) throw error;
 
       if (data.user) {
-        // Role and auditor profile are automatically created by database trigger
         toast.success('Account created successfully! Please complete your profile after signing in.');
         setEmail('');
         setPassword('');
@@ -158,133 +158,156 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/5 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Audit Portal</CardTitle>
-          <CardDescription className="text-center">
-            Manage audits across India
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Tabs defaultValue="signin" className="w-full" onValueChange={clearErrors}>
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
-            </TabsList>
+    <div className="min-h-screen flex flex-col bg-background">
+      {/* Header */}
+      <header className="p-6">
+        <Button variant="ghost" onClick={() => navigate('/')} className="gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Home
+        </Button>
+      </header>
 
-            <TabsContent value="signin">
-              <form onSubmit={handleSignIn} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signin-email">Email</Label>
-                  <Input
-                    id="signin-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
-                    }}
-                    className={errors.email ? 'border-destructive' : ''}
-                    required
-                  />
-                  {errors.email && (
-                    <p className="text-sm text-destructive">{errors.email}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
-                  <Input
-                    id="signin-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                    }}
-                    className={errors.password ? 'border-destructive' : ''}
-                    required
-                  />
-                  {errors.password && (
-                    <p className="text-sm text-destructive">{errors.password}</p>
-                  )}
-                </div>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Signing in...' : 'Sign In'}
-                </Button>
-              </form>
-            </TabsContent>
+      {/* Main Content */}
+      <main className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          {/* Logo */}
+          <div className="flex items-center justify-center gap-3 mb-8">
+            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+              <Shield className="h-7 w-7 text-primary-foreground" />
+            </div>
+            <span className="font-heading text-2xl font-bold">AuditHub</span>
+          </div>
 
-            <TabsContent value="signup">
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">Full Name</Label>
-                  <Input
-                    id="signup-name"
-                    type="text"
-                    placeholder="John Doe"
-                    value={fullName}
-                    onChange={(e) => {
-                      setFullName(e.target.value);
-                      if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: undefined }));
-                    }}
-                    className={errors.fullName ? 'border-destructive' : ''}
-                    required
-                  />
-                  {errors.fullName && (
-                    <p className="text-sm text-destructive">{errors.fullName}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={email}
-                    onChange={(e) => {
-                      setEmail(e.target.value);
-                      if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
-                    }}
-                    className={errors.email ? 'border-destructive' : ''}
-                    required
-                  />
-                  {errors.email && (
-                    <p className="text-sm text-destructive">{errors.email}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                    }}
-                    className={errors.password ? 'border-destructive' : ''}
-                    required
-                  />
-                  {errors.password && (
-                    <p className="text-sm text-destructive">{errors.password}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    At least 8 characters with uppercase, lowercase, and a number
-                  </p>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  All new accounts are created as Auditors. Contact your admin for role changes.
-                </p>
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Creating account...' : 'Create Account'}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+          <Card className="border-0 shadow-lg">
+            <CardHeader className="space-y-1 pb-4">
+              <CardTitle className="text-2xl font-bold text-center">Welcome</CardTitle>
+              <CardDescription className="text-center">
+                Sign in to manage your audits
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="signin" className="w-full" onValueChange={clearErrors}>
+                <TabsList className="grid w-full grid-cols-2 mb-6">
+                  <TabsTrigger value="signin">Sign In</TabsTrigger>
+                  <TabsTrigger value="signup">Sign Up</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="signin" className="mt-0">
+                  <form onSubmit={handleSignIn} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="signin-email">Email</Label>
+                      <Input
+                        id="signin-email"
+                        type="email"
+                        placeholder="your@email.com"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+                        }}
+                        className={errors.email ? 'border-destructive focus-visible:ring-destructive' : ''}
+                        required
+                      />
+                      {errors.email && (
+                        <p className="text-sm text-destructive">{errors.email}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="signin-password">Password</Label>
+                      <Input
+                        id="signin-password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+                        }}
+                        className={errors.password ? 'border-destructive focus-visible:ring-destructive' : ''}
+                        required
+                      />
+                      {errors.password && (
+                        <p className="text-sm text-destructive">{errors.password}</p>
+                      )}
+                    </div>
+                    <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                      {loading ? 'Signing in...' : 'Sign In'}
+                    </Button>
+                  </form>
+                </TabsContent>
+
+                <TabsContent value="signup" className="mt-0">
+                  <form onSubmit={handleSignUp} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-name">Full Name</Label>
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="John Doe"
+                        value={fullName}
+                        onChange={(e) => {
+                          setFullName(e.target.value);
+                          if (errors.fullName) setErrors((prev) => ({ ...prev, fullName: undefined }));
+                        }}
+                        className={errors.fullName ? 'border-destructive focus-visible:ring-destructive' : ''}
+                        required
+                      />
+                      {errors.fullName && (
+                        <p className="text-sm text-destructive">{errors.fullName}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-email">Email</Label>
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="your@email.com"
+                        value={email}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+                        }}
+                        className={errors.email ? 'border-destructive focus-visible:ring-destructive' : ''}
+                        required
+                      />
+                      {errors.email && (
+                        <p className="text-sm text-destructive">{errors.email}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-password">Password</Label>
+                      <Input
+                        id="signup-password"
+                        type="password"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+                        }}
+                        className={errors.password ? 'border-destructive focus-visible:ring-destructive' : ''}
+                        required
+                      />
+                      {errors.password && (
+                        <p className="text-sm text-destructive">{errors.password}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        At least 8 characters with uppercase, lowercase, and a number
+                      </p>
+                    </div>
+                    <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                      All new accounts are created as Auditors. Contact your admin for role changes.
+                    </p>
+                    <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                      {loading ? 'Creating account...' : 'Create Account'}
+                    </Button>
+                  </form>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+      </main>
     </div>
   );
 }

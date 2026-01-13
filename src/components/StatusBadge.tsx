@@ -4,52 +4,47 @@ interface StatusBadgeProps {
   status: string;
 }
 
+type BadgeVariant = "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info";
+
 export const StatusBadge = ({ status }: StatusBadgeProps) => {
-  const getVariant = (status: string) => {
+  const getVariantAndLabel = (status: string): { variant: BadgeVariant; label: string } => {
+    const normalized = status.toLowerCase().replace('_', ' ');
+    
     switch (status.toLowerCase()) {
       case 'open':
-        return 'default';
-      case 'applied':
+        return { variant: 'info', label: 'Open' };
       case 'pending':
-        return 'secondary';
+      case 'applied':
+        return { variant: 'warning', label: normalized.charAt(0).toUpperCase() + normalized.slice(1) };
       case 'allotted':
-      case 'accepted':
       case 'in_progress':
-        return 'default';
+        return { variant: 'info', label: status === 'in_progress' ? 'In Progress' : 'Allotted' };
       case 'completed':
       case 'approved':
-        return 'default';
       case 'paid':
-        return 'default';
+      case 'accepted':
+        return { variant: 'success', label: normalized.charAt(0).toUpperCase() + normalized.slice(1) };
       case 'rejected':
-        return 'destructive';
+        return { variant: 'destructive', label: 'Rejected' };
+      case 'draft':
+        return { variant: 'secondary', label: 'Draft' };
       default:
-        return 'outline';
+        return { variant: 'outline', label: normalized.charAt(0).toUpperCase() + normalized.slice(1) };
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'completed':
-      case 'approved':
-      case 'paid':
-        return 'bg-accent text-accent-foreground';
-      case 'pending':
-      case 'applied':
-        return 'bg-warning text-warning-foreground';
-      case 'open':
-        return 'bg-primary text-primary-foreground';
-      case 'allotted':
-      case 'in_progress':
-        return 'bg-primary/80 text-primary-foreground';
-      default:
-        return '';
-    }
-  };
+  const { variant, label } = getVariantAndLabel(status);
 
   return (
-    <Badge variant={getVariant(status)} className={getStatusColor(status)}>
-      {status.replace('_', ' ').toUpperCase()}
+    <Badge variant={variant}>
+      <span className="status-dot" style={{ 
+        backgroundColor: variant === 'success' ? 'hsl(var(--success))' : 
+                        variant === 'warning' ? 'hsl(var(--warning))' : 
+                        variant === 'destructive' ? 'hsl(var(--destructive))' : 
+                        variant === 'info' ? 'hsl(var(--info))' : 
+                        'currentColor'
+      }} />
+      {label}
     </Badge>
   );
 };
