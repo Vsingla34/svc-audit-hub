@@ -29,6 +29,7 @@ import {
   Clock,
   Menu,
   ChevronRight,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -208,6 +209,7 @@ export const adminNavItems: NavItem[] = [
 
 export const auditorNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard },
+  { title: 'Edit Profile', icon: UserCog, href: '/profile-edit' },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Available Jobs', icon: Briefcase },
   { title: 'My Applications', icon: Clock },
