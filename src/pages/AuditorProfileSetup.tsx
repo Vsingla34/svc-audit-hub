@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle, GraduationCap, Hash, Building2, Navigation, Plus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -221,220 +221,253 @@ export default function AuditorProfileSetup() {
   const getStatusBadge = () => {
     switch (kycStatus) {
       case 'approved':
-        return <Badge variant="default" className="bg-green-500">Approved</Badge>;
+        return <Badge className="bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20">Approved</Badge>;
       case 'pending':
-        return <Badge variant="secondary">Pending Approval</Badge>;
+        return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20">Pending Approval</Badge>;
       case 'rejected':
-        return <Badge variant="destructive">Rejected - Please Update</Badge>;
+        return <Badge className="bg-red-500/10 text-red-600 border-red-500/20 hover:bg-red-500/20">Rejected - Please Update</Badge>;
       case 'draft':
-        return <Badge variant="outline">Draft</Badge>;
+        return <Badge variant="outline" className="border-muted-foreground/30">Draft</Badge>;
       default:
-        return <Badge variant="outline">Not Submitted</Badge>;
+        return <Badge variant="outline" className="border-muted-foreground/30">Not Submitted</Badge>;
     }
   };
 
   const isEditable = kycStatus !== 'approved' && kycStatus !== 'pending';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 p-4">
-      <div className="max-w-4xl mx-auto py-8">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate('/dashboard')} 
-          className="mb-4"
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Dashboard
-        </Button>
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <Button 
+            variant="ghost" 
+            onClick={() => navigate('/dashboard')} 
+            className="mb-4 gap-2 hover:bg-primary/10"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Dashboard
+          </Button>
+        </div>
 
-        <Card className="border-primary/20">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
+        <Card className="shadow-xl border-0 bg-card/80 backdrop-blur-sm overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b border-border/50 pb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center">
                   <FileText className="h-6 w-6 text-primary" />
-                  My Auditor Profile
-                </CardTitle>
-                <CardDescription>
-                  {isEditable 
-                    ? 'Fill in your details and upload required documents for KYC verification'
-                    : kycStatus === 'pending' 
-                      ? 'Your profile is under review. You cannot make changes until it is processed.'
-                      : 'Your profile has been approved.'}
-                </CardDescription>
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-bold">My Auditor Profile</CardTitle>
+                  <CardDescription className="mt-1">
+                    {isEditable 
+                      ? 'Fill in your details and upload required documents for KYC verification'
+                      : kycStatus === 'pending' 
+                        ? 'Your profile is under review. You cannot make changes until it is processed.'
+                        : 'Your profile has been approved.'}
+                  </CardDescription>
+                </div>
               </div>
               {getStatusBadge()}
             </div>
           </CardHeader>
-          <CardContent>
+          
+          <CardContent className="p-6 sm:p-8">
             {/* Rejection Reason Alert */}
             {kycStatus === 'rejected' && rejectionReason && (
-              <Alert variant="destructive" className="mb-6">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Your KYC was rejected</AlertTitle>
-                <AlertDescription>
+              <Alert variant="destructive" className="mb-8 border-red-500/30 bg-red-500/5">
+                <AlertCircle className="h-5 w-5" />
+                <AlertTitle className="font-semibold">Your KYC was rejected</AlertTitle>
+                <AlertDescription className="mt-2">
                   <strong>Reason:</strong> {rejectionReason}
-                  <p className="mt-2 text-sm">Please update your profile and resubmit for approval.</p>
+                  <p className="mt-2 text-sm opacity-80">Please update your profile and resubmit for approval.</p>
                 </AlertDescription>
               </Alert>
             )}
             
-            <form onSubmit={handleSubmitForApproval} className="space-y-6">
-              {/* Qualifications */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Briefcase className="h-4 w-4" />
-                  Qualifications (CA/CS/CMA/MBA etc.)
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={qualificationInput}
-                    onChange={(e) => setQualificationInput(e.target.value)}
-                    placeholder="Enter qualification"
-                    onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addQualification())}
-                    disabled={!isEditable}
-                  />
-                  <Button type="button" onClick={addQualification} disabled={!isEditable}>Add</Button>
+            <form onSubmit={handleSubmitForApproval} className="space-y-8">
+              {/* Qualifications Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+                  <GraduationCap className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-lg">Qualifications</h3>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {formData.qualifications.map((qual) => (
-                    <span
-                      key={qual}
-                      className={`px-3 py-1 bg-primary/10 text-primary rounded-full text-sm ${isEditable ? 'cursor-pointer hover:bg-primary/20' : ''}`}
-                      onClick={() => isEditable && removeQualification(qual)}
+                <div className="space-y-3">
+                  <Label className="text-sm text-muted-foreground">Add your qualifications (CA/CS/CMA/MBA etc.)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={qualificationInput}
+                      onChange={(e) => setQualificationInput(e.target.value)}
+                      placeholder="Enter qualification"
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addQualification())}
+                      disabled={!isEditable}
+                      className="flex-1"
+                    />
+                    <Button type="button" onClick={addQualification} disabled={!isEditable} size="icon" className="shrink-0">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 min-h-[40px]">
+                    {formData.qualifications.map((qual) => (
+                      <Badge
+                        key={qual}
+                        variant="secondary"
+                        className={`px-3 py-1.5 gap-1 ${isEditable ? 'cursor-pointer hover:bg-destructive/10 hover:text-destructive' : ''}`}
+                        onClick={() => isEditable && removeQualification(qual)}
+                      >
+                        {qual}
+                        {isEditable && <X className="h-3 w-3 ml-1" />}
+                      </Badge>
+                    ))}
+                    {formData.qualifications.length === 0 && (
+                      <span className="text-sm text-muted-foreground italic">No qualifications added yet</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Experience & Documents Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+                  <Briefcase className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-lg">Experience & Documents</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Years of Experience</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={formData.experience_years}
+                      onChange={(e) => setFormData({ ...formData, experience_years: parseInt(e.target.value) || 0 })}
+                      disabled={!isEditable}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">PAN Card Number <span className="text-destructive">*</span></Label>
+                    <Input
+                      value={formData.pan_card}
+                      onChange={(e) => setFormData({ ...formData, pan_card: e.target.value.toUpperCase() })}
+                      placeholder="ABCDE1234F"
+                      pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"
+                      disabled={!isEditable}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">GST Number (Optional)</Label>
+                    <Input
+                      value={formData.gst_number}
+                      onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() })}
+                      placeholder="22AAAAA0000A1Z5"
+                      disabled={!isEditable}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium flex items-center gap-2">
+                      <Upload className="h-4 w-4" />
+                      Resume Upload (PDF)
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="file"
+                        accept=".pdf"
+                        onChange={(e) => handleFileUpload(e, 'resume')}
+                        disabled={uploading.resume || !isEditable}
+                        className="cursor-pointer"
+                      />
+                    </div>
+                    {formData.resume_url && (
+                      <p className="text-sm text-green-600 flex items-center gap-1">
+                        <span className="text-lg">✓</span> Resume uploaded successfully
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Location Section */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+                  <MapPin className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold text-lg">Location & Preferences</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Base City <span className="text-destructive">*</span></Label>
+                    <Input
+                      value={formData.base_city}
+                      onChange={(e) => setFormData({ ...formData, base_city: e.target.value })}
+                      placeholder="Mumbai"
+                      disabled={!isEditable}
+                      required
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Base State <span className="text-destructive">*</span></Label>
+                    <select
+                      className="flex h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      value={formData.base_state}
+                      onChange={(e) => setFormData({ ...formData, base_state: e.target.value })}
+                      disabled={!isEditable}
+                      required
                     >
-                      {qual} {isEditable && '×'}
-                    </span>
-                  ))}
+                      <option value="">Select State</option>
+                      {INDIAN_STATES.map((state) => (
+                        <option key={state} value={state}>{state}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              {/* Experience */}
-              <div className="space-y-2">
-                <Label>Years of Experience</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={formData.experience_years}
-                  onChange={(e) => setFormData({ ...formData, experience_years: parseInt(e.target.value) || 0 })}
-                  disabled={!isEditable}
-                  required
-                />
-              </div>
-
-              {/* PAN Card */}
-              <div className="space-y-2">
-                <Label>PAN Card Number *</Label>
-                <Input
-                  value={formData.pan_card}
-                  onChange={(e) => setFormData({ ...formData, pan_card: e.target.value.toUpperCase() })}
-                  placeholder="ABCDE1234F"
-                  pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"
-                  disabled={!isEditable}
-                  required
-                />
-              </div>
-
-              {/* GST Number */}
-              <div className="space-y-2">
-                <Label>GST Number (Optional)</Label>
-                <Input
-                  value={formData.gst_number}
-                  onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() })}
-                  placeholder="22AAAAA0000A1Z5"
-                  disabled={!isEditable}
-                />
-              </div>
-
-              {/* Resume Upload */}
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Upload className="h-4 w-4" />
-                  Resume Upload
-                </Label>
-                <Input
-                  type="file"
-                  accept=".pdf"
-                  onChange={(e) => handleFileUpload(e, 'resume')}
-                  disabled={uploading.resume || !isEditable}
-                />
-                {formData.resume_url && (
-                  <p className="text-sm text-muted-foreground">✓ Resume uploaded</p>
-                )}
-              </div>
-
-              {/* Base Location */}
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    Base City *
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Navigation className="h-4 w-4" />
+                    Willing to Travel (km radius)
                   </Label>
                   <Input
-                    value={formData.base_city}
-                    onChange={(e) => setFormData({ ...formData, base_city: e.target.value })}
-                    placeholder="Mumbai"
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={formData.willing_to_travel_radius}
+                    onChange={(e) => setFormData({ ...formData, willing_to_travel_radius: parseInt(e.target.value) || 0 })}
                     disabled={!isEditable}
+                    className="max-w-xs"
                     required
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Base State *</Label>
-                  <select
-                    className="w-full h-10 px-3 rounded-md border border-input bg-background disabled:opacity-50"
-                    value={formData.base_state}
-                    onChange={(e) => setFormData({ ...formData, base_state: e.target.value })}
-                    disabled={!isEditable}
-                    required
-                  >
-                    <option value="">Select State</option>
+
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Preferred States for Work</Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-64 overflow-y-auto p-4 border rounded-xl bg-muted/30">
                     {INDIAN_STATES.map((state) => (
-                      <option key={state} value={state}>{state}</option>
+                      <label key={state} className={`flex items-center gap-2 p-2.5 rounded-lg transition-colors ${isEditable ? 'cursor-pointer hover:bg-primary/5' : 'opacity-60'} ${formData.preferred_states.includes(state) ? 'bg-primary/10 border border-primary/20' : 'bg-background border border-transparent'}`}>
+                        <input
+                          type="checkbox"
+                          checked={formData.preferred_states.includes(state)}
+                          onChange={() => isEditable && toggleState(state)}
+                          disabled={!isEditable}
+                          className="accent-primary h-4 w-4 rounded"
+                        />
+                        <span className="text-sm">{state}</span>
+                      </label>
                     ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Travel Radius */}
-              <div className="space-y-2">
-                <Label>Willing to Travel (km radius)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={formData.willing_to_travel_radius}
-                  onChange={(e) => setFormData({ ...formData, willing_to_travel_radius: parseInt(e.target.value) || 0 })}
-                  disabled={!isEditable}
-                  required
-                />
-              </div>
-
-              {/* Preferred States */}
-              <div className="space-y-2">
-                <Label>Preferred States for Work</Label>
-                <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto p-2 border rounded-md">
-                  {INDIAN_STATES.map((state) => (
-                    <label key={state} className={`flex items-center gap-2 p-2 rounded ${isEditable ? 'cursor-pointer hover:bg-accent' : 'opacity-60'}`}>
-                      <input
-                        type="checkbox"
-                        checked={formData.preferred_states.includes(state)}
-                        onChange={() => isEditable && toggleState(state)}
-                        disabled={!isEditable}
-                        className="accent-primary"
-                      />
-                      <span className="text-sm">{state}</span>
-                    </label>
-                  ))}
+                  </div>
                 </div>
               </div>
 
               {/* Action Buttons */}
               {isEditable && (
-                <div className="flex gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-border/50">
                   <Button 
                     type="button" 
                     variant="outline" 
-                    className="flex-1"
+                    className="flex-1 h-12"
                     onClick={handleSaveDraft}
                     disabled={savingDraft || loading || Object.values(uploading).some(v => v)}
                   >
@@ -443,7 +476,7 @@ export default function AuditorProfileSetup() {
                   </Button>
                   <Button 
                     type="submit" 
-                    className="flex-1"
+                    className="flex-1 h-12"
                     disabled={loading || savingDraft || Object.values(uploading).some(v => v)}
                   >
                     <Send className="h-4 w-4 mr-2" />
@@ -453,8 +486,14 @@ export default function AuditorProfileSetup() {
               )}
 
               {kycStatus === 'pending' && (
-                <div className="text-center py-4 text-muted-foreground">
-                  Your profile is under review. You will be notified once it is approved.
+                <div className="text-center py-6 bg-amber-500/5 rounded-xl border border-amber-500/20">
+                  <p className="text-muted-foreground">Your profile is under review. You will be notified once it is approved.</p>
+                </div>
+              )}
+              
+              {kycStatus === 'approved' && (
+                <div className="text-center py-6 bg-green-500/5 rounded-xl border border-green-500/20">
+                  <p className="text-green-600 font-medium">✓ Your profile has been approved. You can now apply for assignments.</p>
                 </div>
               )}
             </form>

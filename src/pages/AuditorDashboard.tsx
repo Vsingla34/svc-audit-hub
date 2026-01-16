@@ -52,7 +52,8 @@ export default function AuditorDashboard() {
 
   const fetchData = async () => {
     try {
-      const { data: openData } = await supabase.from('assignments_public_view').select('*').order('audit_date', { ascending: true });
+      // Fetch open assignments directly from assignments table (RLS policy allows this now)
+      const { data: openData } = await supabase.from('assignments').select('id, state, city, pincode, audit_type, audit_date, deadline_date, status, latitude, longitude, created_at').eq('status', 'open').order('audit_date', { ascending: true });
       setOpenAssignments(openData || []);
 
       const { data: applicationsData } = await supabase.from('applications').select(`*, assignment:assignments(*)`).eq('auditor_id', user?.id).order('applied_at', { ascending: false });
