@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { useEffect } from 'react';
 import { z } from 'zod';
-import { Shield, ArrowLeft } from 'lucide-react';
+import { Shield, ArrowLeft, Phone, Mail, User, Lock } from 'lucide-react';
 
 // Validation schemas
 const emailSchema = z.string().trim().email('Please enter a valid email address').max(255, 'Email must be less than 255 characters');
@@ -28,6 +28,12 @@ const fullNameSchema = z.string()
   .max(100, 'Name must be less than 100 characters')
   .regex(/^[a-zA-Z\s'-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes');
 
+const phoneSchema = z.string()
+  .trim()
+  .min(10, 'Mobile number must be at least 10 digits')
+  .max(15, 'Mobile number must be less than 15 digits')
+  .regex(/^[6-9]\d{9}$/, 'Please enter a valid 10-digit Indian mobile number');
+
 const signInSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, 'Password is required'),
@@ -37,6 +43,7 @@ const signUpSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   fullName: fullNameSchema,
+  phone: phoneSchema,
 });
 
 export default function Auth() {
@@ -44,7 +51,8 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
+  const [phone, setPhone] = useState('');
+  const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string; phone?: string }>({});
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -55,9 +63,9 @@ export default function Auth() {
   }, [user, navigate]);
 
   const validateSignUp = (): boolean => {
-    const result = signUpSchema.safeParse({ email, password, fullName });
+    const result = signUpSchema.safeParse({ email, password, fullName, phone });
     if (!result.success) {
-      const fieldErrors: { email?: string; password?: string; fullName?: string } = {};
+      const fieldErrors: { email?: string; password?: string; fullName?: string; phone?: string } = {};
       result.error.errors.forEach((err) => {
         const field = err.path[0] as string;
         if (!fieldErrors[field as keyof typeof fieldErrors]) {
@@ -104,6 +112,7 @@ export default function Auth() {
         options: {
           data: {
             full_name: fullName.trim(),
+            phone: phone.trim(),
           },
           emailRedirectTo: `${window.location.origin}/dashboard`,
         },
@@ -112,10 +121,14 @@ export default function Auth() {
       if (error) throw error;
 
       if (data.user) {
+        // Update the profile with phone number
+        await supabase.from('profiles').update({ phone: phone.trim() }).eq('id', data.user.id);
+        
         toast.success('Account created successfully! Please complete your profile after signing in.');
         setEmail('');
         setPassword('');
         setFullName('');
+        setPhone('');
         setErrors({});
       }
     } catch (error: any) {
@@ -158,10 +171,10 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
       <header className="p-6">
-        <Button variant="ghost" onClick={() => navigate('/')} className="gap-2">
+        <Button variant="ghost" onClick={() => navigate('/')} className="gap-2 hover:bg-primary/10">
           <ArrowLeft className="h-4 w-4" />
           Back to Home
         </Button>
@@ -172,13 +185,13 @@ export default function Auth() {
         <div className="w-full max-w-md">
           {/* Logo */}
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
-              <Shield className="h-7 w-7 text-primary-foreground" />
+            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/25">
+              <Shield className="h-8 w-8 text-primary-foreground" />
             </div>
-            <span className="font-heading text-2xl font-bold">AuditHub</span>
+            <span className="font-heading text-3xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">AuditHub</span>
           </div>
 
-          <Card className="border-0 shadow-lg">
+          <Card className="border-0 shadow-xl bg-card/80 backdrop-blur-sm">
             <CardHeader className="space-y-1 pb-4">
               <CardTitle className="text-2xl font-bold text-center">Welcome</CardTitle>
               <CardDescription className="text-center">
@@ -187,15 +200,18 @@ export default function Auth() {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="signin" className="w-full" onValueChange={clearErrors}>
-                <TabsList className="grid w-full grid-cols-2 mb-6">
-                  <TabsTrigger value="signin">Sign In</TabsTrigger>
-                  <TabsTrigger value="signup">Sign Up</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50">
+                  <TabsTrigger value="signin" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Sign In</TabsTrigger>
+                  <TabsTrigger value="signup" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Sign Up</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="signin" className="mt-0">
                   <form onSubmit={handleSignIn} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="signin-email">Email</Label>
+                      <Label htmlFor="signin-email" className="flex items-center gap-2 text-sm font-medium">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        Email
+                      </Label>
                       <Input
                         id="signin-email"
                         type="email"
@@ -213,7 +229,10 @@ export default function Auth() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="signin-password">Password</Label>
+                      <Label htmlFor="signin-password" className="flex items-center gap-2 text-sm font-medium">
+                        <Lock className="h-4 w-4 text-muted-foreground" />
+                        Password
+                      </Label>
                       <Input
                         id="signin-password"
                         type="password"
@@ -239,7 +258,10 @@ export default function Auth() {
                 <TabsContent value="signup" className="mt-0">
                   <form onSubmit={handleSignUp} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="signup-name">Full Name</Label>
+                      <Label htmlFor="signup-name" className="flex items-center gap-2 text-sm font-medium">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        Full Name
+                      </Label>
                       <Input
                         id="signup-name"
                         type="text"
@@ -257,7 +279,32 @@ export default function Auth() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="signup-email">Email</Label>
+                      <Label htmlFor="signup-phone" className="flex items-center gap-2 text-sm font-medium">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        Mobile Number <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        id="signup-phone"
+                        type="tel"
+                        placeholder="9876543210"
+                        value={phone}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setPhone(value);
+                          if (errors.phone) setErrors((prev) => ({ ...prev, phone: undefined }));
+                        }}
+                        className={errors.phone ? 'border-destructive focus-visible:ring-destructive' : ''}
+                        required
+                      />
+                      {errors.phone && (
+                        <p className="text-sm text-destructive">{errors.phone}</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="signup-email" className="flex items-center gap-2 text-sm font-medium">
+                        <Mail className="h-4 w-4 text-muted-foreground" />
+                        Email
+                      </Label>
                       <Input
                         id="signup-email"
                         type="email"
@@ -275,7 +322,10 @@ export default function Auth() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="signup-password">Password</Label>
+                      <Label htmlFor="signup-password" className="flex items-center gap-2 text-sm font-medium">
+                        <Lock className="h-4 w-4 text-muted-foreground" />
+                        Password
+                      </Label>
                       <Input
                         id="signup-password"
                         type="password"
@@ -295,9 +345,11 @@ export default function Auth() {
                         At least 8 characters with uppercase, lowercase, and a number
                       </p>
                     </div>
-                    <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
-                      All new accounts are created as Auditors. Contact your admin for role changes.
-                    </p>
+                    <div className="bg-muted/50 p-4 rounded-xl border border-border/50">
+                      <p className="text-sm text-muted-foreground">
+                        📋 All new accounts are created as Auditors. Contact your admin for role changes.
+                      </p>
+                    </div>
                     <Button type="submit" className="w-full" size="lg" disabled={loading}>
                       {loading ? 'Creating account...' : 'Create Account'}
                     </Button>

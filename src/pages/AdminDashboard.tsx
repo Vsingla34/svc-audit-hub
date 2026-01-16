@@ -278,36 +278,48 @@ export default function AdminDashboard() {
         <div className="space-y-6">
           {/* Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="bg-card hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <CardDescription>Total Assignments</CardDescription>
-                <CardTitle className="text-3xl flex items-center gap-2">
-                  <Briefcase className="h-6 w-6 text-primary" />{stats.total}
-                </CardTitle>
+            <Card className="border-0 shadow-md bg-gradient-to-br from-primary/5 to-primary/10 hover:shadow-lg transition-all duration-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardDescription className="text-sm font-medium text-muted-foreground">Total Assignments</CardDescription>
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Briefcase className="h-5 w-5 text-primary" />
+                  </div>
+                </div>
+                <CardTitle className="text-3xl font-bold mt-2">{stats.total}</CardTitle>
               </CardHeader>
             </Card>
-            <Card className="bg-card hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <CardDescription>Open</CardDescription>
-                <CardTitle className="text-3xl flex items-center gap-2">
-                  <Clock className="h-6 w-6 text-amber-500" />{stats.open}
-                </CardTitle>
+            <Card className="border-0 shadow-md bg-gradient-to-br from-amber-500/5 to-amber-500/10 hover:shadow-lg transition-all duration-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardDescription className="text-sm font-medium text-muted-foreground">Open</CardDescription>
+                  <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                    <Clock className="h-5 w-5 text-amber-500" />
+                  </div>
+                </div>
+                <CardTitle className="text-3xl font-bold mt-2">{stats.open}</CardTitle>
               </CardHeader>
             </Card>
-            <Card className="bg-card hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <CardDescription>Allotted</CardDescription>
-                <CardTitle className="text-3xl flex items-center gap-2">
-                  <Users className="h-6 w-6 text-blue-500" />{stats.allotted}
-                </CardTitle>
+            <Card className="border-0 shadow-md bg-gradient-to-br from-blue-500/5 to-blue-500/10 hover:shadow-lg transition-all duration-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardDescription className="text-sm font-medium text-muted-foreground">Allotted</CardDescription>
+                  <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                    <Users className="h-5 w-5 text-blue-500" />
+                  </div>
+                </div>
+                <CardTitle className="text-3xl font-bold mt-2">{stats.allotted}</CardTitle>
               </CardHeader>
             </Card>
-            <Card className="bg-card hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <CardDescription>Completed</CardDescription>
-                <CardTitle className="text-3xl flex items-center gap-2">
-                  <CheckCircle className="h-6 w-6 text-green-500" />{stats.completed}
-                </CardTitle>
+            <Card className="border-0 shadow-md bg-gradient-to-br from-green-500/5 to-green-500/10 hover:shadow-lg transition-all duration-300">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardDescription className="text-sm font-medium text-muted-foreground">Completed</CardDescription>
+                  <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center">
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  </div>
+                </div>
+                <CardTitle className="text-3xl font-bold mt-2">{stats.completed}</CardTitle>
               </CardHeader>
             </Card>
           </div>
@@ -372,11 +384,14 @@ export default function AdminDashboard() {
           <AssignmentSearchExport assignments={filteredAssignments} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
           <AssignmentFilters filterStatus={filterStatus} filterState={filterState} filterCity={filterCity} filterAuditType={filterAuditType} filterDateFrom={filterDateFrom} filterDateTo={filterDateTo} onFilterChange={handleFilterChange} onReset={resetFilters} states={uniqueStates} cities={uniqueCities} auditTypes={uniqueAuditTypes} />
 
-          <Card>
-            <CardHeader>
+          <Card className="border-0 shadow-lg">
+            <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10 border-b border-border/50">
               <div className="flex items-center justify-between">
-                <div><CardTitle>All Assignments</CardTitle><CardDescription>{filteredAssignments.length} assignments</CardDescription></div>
-                {selectedAssignments.length > 0 && <Button variant="outline" onClick={() => setShowBulkActions(!showBulkActions)}>Bulk Actions ({selectedAssignments.length})</Button>}
+                <div>
+                  <CardTitle className="text-lg font-semibold">All Assignments</CardTitle>
+                  <CardDescription>{filteredAssignments.length} assignments found</CardDescription>
+                </div>
+                {selectedAssignments.length > 0 && <Button variant="outline" size="sm" onClick={() => setShowBulkActions(!showBulkActions)}>Bulk Actions ({selectedAssignments.length})</Button>}
               </div>
             </CardHeader>
             <CardContent>
@@ -454,9 +469,12 @@ export default function AdminDashboard() {
 
       {/* Applications Tab */}
       {activeTab === 'applications' && (
-        <Card>
-          <CardHeader><CardTitle>Pending Applications</CardTitle><CardDescription>Review and allot assignments</CardDescription></CardHeader>
-          <CardContent>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10 border-b border-border/50">
+            <CardTitle className="text-lg font-semibold">Pending Applications</CardTitle>
+            <CardDescription>Review and allot assignments to auditors</CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
             {applications.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No pending applications</p>
             ) : (
@@ -503,9 +521,12 @@ export default function AdminDashboard() {
 
       {/* KYC Approvals Tab */}
       {activeTab === 'kyc-approvals' && (
-        <Card>
-          <CardHeader><CardTitle>Pending KYC Approvals</CardTitle><CardDescription>Review auditor registrations</CardDescription></CardHeader>
-          <CardContent>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10 border-b border-border/50">
+            <CardTitle className="text-lg font-semibold">Pending KYC Approvals</CardTitle>
+            <CardDescription>Review auditor registrations and verify documents</CardDescription>
+          </CardHeader>
+          <CardContent className="p-6">
             {pendingKyc.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No pending KYC approvals</p>
             ) : (
