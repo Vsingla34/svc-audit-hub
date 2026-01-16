@@ -11,6 +11,8 @@ import Dashboard from "./pages/Dashboard";
 import AuditorProfileSetup from "./pages/AuditorProfileSetup";
 import PaymentsDashboard from "./pages/PaymentsDashboard";
 import MapView from "./pages/MapView";
+import AssignmentDetail from "./pages/AssignmentDetail";
+import ProfileEdit from "./pages/ProfileEdit";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,8 +30,10 @@ function App() {
               <Route path="/auth" element={<Auth />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/profile-setup" element={<AuditorProfileSetup />} />
+              <Route path="/profile-edit" element={<ProfileEdit />} />
               <Route path="/payments" element={<PaymentsDashboard />} />
               <Route path="/map" element={<MapView />} />
+              <Route path="/assignment/:id" element={<AssignmentDetail />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

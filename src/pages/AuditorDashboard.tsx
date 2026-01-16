@@ -345,7 +345,7 @@ export default function AuditorDashboard() {
               {myAssignments.map(a => {
                 const deadlineStatus = getDeadlineStatus(a.deadline_date);
                 return (
-                  <Card key={a.id}>
+                  <Card key={a.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/assignment/${a.id}`)}>
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <div>
@@ -366,18 +366,21 @@ export default function AuditorDashboard() {
                         <div><span className="text-muted-foreground">OPE:</span><br />₹{a.ope?.toLocaleString('en-IN') || 0}</div>
                       </div>
 
-                      {a.status === 'allotted' && (
-                        <div className="flex flex-wrap gap-2 pt-2 border-t">
-                          <GPSCheckInOut assignmentId={a.id} checkInTime={a.check_in_time} checkOutTime={a.check_out_time} onUpdate={fetchData} />
-                          <Button onClick={() => openReportDialog(a)}>Submit Report</Button>
-                        </div>
-                      )}
-
-                      {a.report_url && (
-                        <div className="pt-2 border-t">
-                          <Button variant="outline" onClick={() => window.open(a.report_url, '_blank')}>View Report</Button>
-                        </div>
-                      )}
+                      <div className="flex flex-wrap gap-2 pt-2 border-t">
+                        <Button variant="default" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/assignment/${a.id}`); }}>
+                          View Details
+                        </Button>
+                        {a.status === 'allotted' && (
+                          <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); openReportDialog(a); }}>
+                            Submit Report
+                          </Button>
+                        )}
+                        {a.report_url && (
+                          <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); window.open(a.report_url, '_blank'); }}>
+                            View Report
+                          </Button>
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 );
