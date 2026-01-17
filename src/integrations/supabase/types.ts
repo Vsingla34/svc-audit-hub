@@ -484,14 +484,14 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          address?: string | null
+          address?: never
           allotted_to?: string | null
           audit_date?: string | null
           audit_type?: string | null
-          branch_name?: string | null
+          branch_name?: never
           can_view_details?: never
           city?: string | null
-          client_name?: string | null
+          client_name?: never
           completed_at?: string | null
           completion_remarks?: string | null
           created_at?: string | null
@@ -509,14 +509,14 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          address?: string | null
+          address?: never
           allotted_to?: string | null
           audit_date?: string | null
           audit_type?: string | null
-          branch_name?: string | null
+          branch_name?: never
           can_view_details?: never
           city?: string | null
-          client_name?: string | null
+          client_name?: never
           completed_at?: string | null
           completion_remarks?: string | null
           created_at?: string | null

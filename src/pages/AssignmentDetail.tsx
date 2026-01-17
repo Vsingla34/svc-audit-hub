@@ -57,6 +57,7 @@ export default function AssignmentDetail() {
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploadingReport, setUploadingReport] = useState(false);
+  const [reportSignedUrl, setReportSignedUrl] = useState<string | null>(null);
   
   // Report dialog state
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
@@ -68,6 +69,24 @@ export default function AssignmentDetail() {
   useEffect(() => {
     if (id) fetchAssignment();
   }, [id]);
+
+  // Generate signed URL when assignment has a report
+  useEffect(() => {
+    const getSignedUrl = async () => {
+      if (assignment?.report_url && !assignment.report_url.startsWith('http')) {
+        const { data, error } = await supabase.storage
+          .from('kyc-documents')
+          .createSignedUrl(assignment.report_url, 3600); // 1 hour expiry
+        if (!error && data) {
+          setReportSignedUrl(data.signedUrl);
+        }
+      } else if (assignment?.report_url) {
+        // Legacy: URL is already a full URL (from before the fix)
+        setReportSignedUrl(assignment.report_url);
+      }
+    };
+    getSignedUrl();
+  }, [assignment?.report_url]);
 
   const fetchAssignment = async () => {
     try {
@@ -131,20 +150,18 @@ export default function AssignmentDetail() {
     setUploadingReport(true);
     try {
       const fileExt = selectedReportFile.name.split('.').pop();
-      const fileName = `${assignment.id}-${Date.now()}.${fileExt}`;
-      const filePath = `reports/${fileName}`;
+      const fileName = `report-${assignment.id}-${Date.now()}.${fileExt}`;
+      // Store in user's folder to comply with RLS policy: (auth.uid())::text = (storage.foldername(name))[1]
+      const filePath = `${user?.id}/reports/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('kyc-documents')
         .upload(filePath, selectedReportFile);
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('kyc-documents')
-        .getPublicUrl(filePath);
-
+      // Store the file path (not URL) in database - we'll generate signed URLs when viewing
       const updateData: any = { 
-        report_url: publicUrl, 
+        report_url: filePath, 
         completion_status: completionStatus,
         completion_remarks: completionRemarks || null,
       };
@@ -357,7 +374,12 @@ export default function AssignmentDetail() {
                           </p>
                         </div>
                       </div>
-                      <Button variant="outline" size="sm" onClick={() => window.open(assignment.report_url!, '_blank')}>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => reportSignedUrl && window.open(reportSignedUrl, '_blank')}
+                        disabled={!reportSignedUrl}
+                      >
                         <ExternalLink className="h-4 w-4 mr-1" />
                         View Report
                       </Button>

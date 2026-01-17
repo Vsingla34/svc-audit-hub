@@ -94,15 +94,15 @@ export default function AuditorDashboard() {
     setUploadingReport(selectedAssignmentForReport.id);
     try {
       const fileExt = selectedReportFile.name.split('.').pop();
-      const fileName = `${selectedAssignmentForReport.id}-${Date.now()}.${fileExt}`;
-      const filePath = `reports/${fileName}`;
+      const fileName = `report-${selectedAssignmentForReport.id}-${Date.now()}.${fileExt}`;
+      // Store in user's folder to comply with RLS policy: (auth.uid())::text = (storage.foldername(name))[1]
+      const filePath = `${user?.id}/reports/${fileName}`;
 
       const { error: uploadError } = await supabase.storage.from('kyc-documents').upload(filePath, selectedReportFile);
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage.from('kyc-documents').getPublicUrl(filePath);
-
-      const updateData: any = { report_url: publicUrl, completion_status: completionStatus };
+      // Store the file path (not URL) in database - we'll generate signed URLs when viewing
+      const updateData: any = { report_url: filePath, completion_status: completionStatus };
       if (completionStatus === 'completed') { updateData.status = 'completed'; updateData.completed_at = new Date().toISOString(); }
       else { updateData.incomplete_reason = incompleteReason; }
 
