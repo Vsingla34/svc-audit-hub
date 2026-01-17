@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Briefcase, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Briefcase, Clock, CheckCircle, AlertCircle, IndianRupee } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -18,6 +18,7 @@ import { AuditorAnalytics } from '@/components/AuditorAnalytics';
 import { DashboardLayout, auditorNavItems } from '@/components/DashboardLayout';
 import { Badge } from '@/components/ui/badge';
 import { format, differenceInDays, isPast, isToday } from 'date-fns';
+import { useProfileValidation } from '@/hooks/useProfileValidation';
 
 export default function AuditorDashboard() {
   const { user } = useAuth();
@@ -29,6 +30,9 @@ export default function AuditorDashboard() {
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [uploadingReport, setUploadingReport] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  
+  // Profile validation hook
+  const { isComplete: profileComplete, missingFields, canApply, refreshProfile } = useProfileValidation();
   
   // Filters
   const [filterCity, setFilterCity] = useState<string>('all');
@@ -52,8 +56,8 @@ export default function AuditorDashboard() {
 
   const fetchData = async () => {
     try {
-      // Fetch open assignments directly from assignments table (RLS policy allows this now)
-      const { data: openData } = await supabase.from('assignments').select('id, state, city, pincode, audit_type, audit_date, deadline_date, status, latitude, longitude, created_at').eq('status', 'open').order('audit_date', { ascending: true });
+      // Fetch open assignments with fees included
+      const { data: openData } = await supabase.from('assignments').select('id, state, city, pincode, audit_type, audit_date, deadline_date, status, latitude, longitude, created_at, fees').eq('status', 'open').order('audit_date', { ascending: true });
       setOpenAssignments(openData || []);
 
       const { data: applicationsData } = await supabase.from('applications').select(`*, assignment:assignments(*)`).eq('auditor_id', user?.id).order('applied_at', { ascending: false });
@@ -69,11 +73,31 @@ export default function AuditorDashboard() {
   };
 
   const handleApply = async (assignmentId: string) => {
-    if (kycStatus !== 'approved') { toast.error('Please complete KYC verification first'); return; }
-    if (myApplications.find(app => app.assignment_id === assignmentId)) { toast.error('Already applied'); return; }
+    // Enhanced validation - check profile completeness and KYC status
+    if (!profileComplete) {
+      toast.error(`Please complete your profile first. Missing: ${missingFields.join(', ')}`);
+      return;
+    }
+    if (kycStatus !== 'approved') { 
+      toast.error('Your profile must be approved by admin before applying. Please submit your profile for approval.'); 
+      return; 
+    }
+    if (myApplications.find(app => app.assignment_id === assignmentId)) { 
+      toast.error('Already applied'); 
+      return; 
+    }
     try {
       const { error } = await supabase.from('applications').insert({ assignment_id: assignmentId, auditor_id: user?.id });
       if (error) throw error;
+      
+      // Log activity
+      await supabase.from('assignment_activities').insert({
+        assignment_id: assignmentId,
+        user_id: user?.id,
+        activity_type: 'application_received',
+        description: 'New application received from auditor',
+      });
+      
       toast.success('Application submitted!');
       fetchData();
     } catch (error: any) { toast.error(error.message); }
@@ -282,12 +306,22 @@ export default function AuditorDashboard() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      <div className="text-sm">
+                      <div className="text-sm space-y-1">
                         <div>Audit Date: {a.audit_date ? format(new Date(a.audit_date), 'dd MMM yyyy') : 'N/A'}</div>
-                        <div className="text-xs text-muted-foreground mt-1">Apply to view full details</div>
+                        <div>Deadline: {a.deadline_date ? format(new Date(a.deadline_date), 'dd MMM yyyy') : 'N/A'}</div>
+                        <div className="flex items-center gap-1 font-semibold text-primary">
+                          <IndianRupee className="h-4 w-4" />
+                          <span>₹{a.fees?.toLocaleString('en-IN') || 'N/A'}</span>
+                        </div>
                       </div>
                       {!hasApplied ? (
-                        <Button className="w-full" onClick={() => handleApply(a.id)}>Apply</Button>
+                        <Button 
+                          className="w-full" 
+                          onClick={() => handleApply(a.id)}
+                          disabled={!canApply}
+                        >
+                          {canApply ? 'Apply' : 'Complete Profile to Apply'}
+                        </Button>
                       ) : (
                         <div className="text-center text-sm py-2 bg-muted rounded">Applied</div>
                       )}

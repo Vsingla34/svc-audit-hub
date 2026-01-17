@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { GPSCheckInOut } from '@/components/GPSCheckInOut';
 import { StatusBadge } from '@/components/StatusBadge';
+import { AssignmentTimeline } from '@/components/AssignmentTimeline';
+import { AssignmentDocuments } from '@/components/AssignmentDocuments';
 
 interface Assignment {
   id: string;
@@ -418,6 +420,22 @@ export default function AssignmentDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Supporting Documents */}
+            <AssignmentDocuments 
+              assignmentId={assignment.id} 
+              canUpload={assignment.status === 'allotted'} 
+            />
+
+            {/* Activity Timeline */}
+            <AssignmentTimeline 
+              assignmentId={assignment.id}
+              checkInTime={assignment.check_in_time}
+              checkOutTime={assignment.check_out_time}
+              reportUrl={assignment.report_url}
+              completedAt={assignment.completed_at}
+              status={assignment.status}
+            />
           </div>
 
           {/* Sidebar */}
