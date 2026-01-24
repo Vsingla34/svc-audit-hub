@@ -36,12 +36,12 @@ export default function AuditorProfileSetup() {
     pan_card: '',
     gst_number: '',
     resume_url: '',
-    experience_years: 0,
+    experience_years: null as number | null,
     base_city: '',
     base_state: '',
     preferred_states: [] as string[],
     preferred_cities: [] as string[], 
-    willing_to_travel_radius: 50,
+    willing_to_travel_radius: null as number | null,
   });
 
   const [qualificationInput, setQualificationInput] = useState('');
@@ -67,12 +67,12 @@ export default function AuditorProfileSetup() {
         pan_card: data.pan_card || '',
         gst_number: data.gst_number || '',
         resume_url: data.resume_url || '',
-        experience_years: data.experience_years || 0,
+        experience_years: data.experience_years || null,
         base_city: data.base_city || '',
         base_state: data.base_state || '',
         preferred_states: data.preferred_states || [],
         preferred_cities: data.preferred_cities || [],
-        willing_to_travel_radius: data.willing_to_travel_radius || 50,
+        willing_to_travel_radius: data.willing_to_travel_radius || null,
       });
     }
   };
@@ -147,6 +147,17 @@ export default function AuditorProfileSetup() {
     });
   };
 
+  const handleNumberInput = (value: string, field: 'experience_years' | 'willing_to_travel_radius') => {
+    // Remove leading zeros and convert to number
+    const cleanedValue = value.replace(/^0+/, '');
+    const numValue = cleanedValue === '' ? null : parseInt(cleanedValue, 10);
+    
+    setFormData({
+      ...formData,
+      [field]: numValue,
+    });
+  };
+
   const handleSaveDraft = async () => {
     if (!user) return;
 
@@ -164,6 +175,8 @@ export default function AuditorProfileSetup() {
       .upsert({
         user_id: user.id,
         ...formData,
+        experience_years: formData.experience_years || 0,
+        willing_to_travel_radius: formData.willing_to_travel_radius || 50,
         qualifications: finalQualifications,
         kyc_status: kycStatus === 'approved' || kycStatus === 'pending' ? 'pending' : 'draft', 
       });
@@ -217,6 +230,8 @@ export default function AuditorProfileSetup() {
       .upsert({
         user_id: user.id,
         ...formData,
+        experience_years: formData.experience_years || 0,
+        willing_to_travel_radius: formData.willing_to_travel_radius || 50,
         qualifications: finalQualifications,
         kyc_status: 'pending',
       });
@@ -360,10 +375,12 @@ export default function AuditorProfileSetup() {
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Years of Experience</Label>
                     <Input
-                      type="number"
-                      min="0"
-                      value={formData.experience_years}
-                      onChange={(e) => setFormData({ ...formData, experience_years: parseInt(e.target.value) || 0 })}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={formData.experience_years === null ? '' : formData.experience_years}
+                      onChange={(e) => handleNumberInput(e.target.value, 'experience_years')}
+                      placeholder="0"
                       disabled={!isEditable}
                       required
                     />
@@ -454,11 +471,12 @@ export default function AuditorProfileSetup() {
                     Willing to Travel (km radius)
                   </Label>
                   <Input
-                    type="number"
-                    min="0"
-                    max="1000"
-                    value={formData.willing_to_travel_radius}
-                    onChange={(e) => setFormData({ ...formData, willing_to_travel_radius: parseInt(e.target.value) || 0 })}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={formData.willing_to_travel_radius === null ? '' : formData.willing_to_travel_radius}
+                    onChange={(e) => handleNumberInput(e.target.value, 'willing_to_travel_radius')}
+                    placeholder="50"
                     disabled={!isEditable}
                     className="max-w-xs"
                     required
