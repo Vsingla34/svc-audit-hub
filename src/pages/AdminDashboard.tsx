@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -6,58 +6,58 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Plus, Users, Briefcase, CheckCircle, Clock, Star } from 'lucide-react';
+import { Plus, Star, Download, Eye, MapPin, Phone, Mail, MessageSquare } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Checkbox } from '@/components/ui/checkbox';
-import { AssignmentFilters } from '@/components/AssignmentFilters';
-import { DashboardAnalytics } from '@/components/DashboardAnalytics';
-import { AuditorsList } from '@/components/AuditorsList';
 import { AssignmentSearchExport } from '@/components/AssignmentSearchExport';
 import { UserRoleManagement } from '@/components/UserRoleManagement';
 import { DeadlineReminders } from '@/components/DeadlineReminders';
 import { ReportsManagement } from '@/components/ReportsManagement';
 import { DashboardLayout, adminNavItems } from '@/components/DashboardLayout';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { DashboardAnalytics } from '@/components/DashboardAnalytics';
+import { AuditorsList } from '@/components/AuditorsList';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'overview';
+
   const [assignments, setAssignments] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
   const [pendingKyc, setPendingKyc] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, open: 0, allotted: 0, completed: 0 });
+  // loading kept for state, but removed from UI return
   const [loading, setLoading] = useState(true);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
   
-  // Filters
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterState, setFilterState] = useState<string>('all');
-  const [filterCity, setFilterCity] = useState<string>('all');
-  const [filterAuditType, setFilterAuditType] = useState<string>('all');
-  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
-  const [filterDateTo, setFilterDateTo] = useState<string>('');
-  const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
-  const [bulkStatus, setBulkStatus] = useState<string>('');
-  const [showBulkActions, setShowBulkActions] = useState(false);
-  const [auditorRatings, setAuditorRatings] = useState<Record<string, number>>({});
+  const [auditorDetails, setAuditorDetails] = useState<Record<string, { rating: number, experience: number }>>({});
+
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
+  const [kycDetailOpen, setKycDetailOpen] = useState(false);
+  const [appDetailOpen, setAppDetailOpen] = useState(false);
+  const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
+
+  const [selectedAssignmentForRating, setSelectedAssignmentForRating] = useState<string | null>(null);
+  const [viewingKycProfile, setViewingKycProfile] = useState<any>(null);
+  const [viewingApplication, setViewingApplication] = useState<any>(null);
+  const [selectedKycUser, setSelectedKycUser] = useState<string | null>(null);
+  
+  const [tempRating, setTempRating] = useState(0);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Rating Dialog
-  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
-  const [selectedAssignmentForRating, setSelectedAssignmentForRating] = useState<string | null>(null);
-  const [tempRating, setTempRating] = useState(0);
-  
-  // KYC Rejection Dialog
-  const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
-  const [selectedKycUser, setSelectedKycUser] = useState<string | null>(null);
-  const [rejectionReason, setRejectionReason] = useState('');
-  
-  // Form state
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<string>('');
+
   const [formData, setFormData] = useState({
     client_name: '', branch_name: '', address: '', city: '', state: '',
     pincode: '', audit_type: 'Stock Audit', audit_date: '', deadline_date: '', fees: '', ope: '',
@@ -65,566 +65,451 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData(); }, []);
 
+  const handleTabChange = (tab: string) => setSearchParams({ tab });
+
   const fetchData = async () => {
+    setLoading(true);
     try {
-      const { data: assignmentsData, error: assignmentsError } = await supabase
-        .from('assignments').select('*').order('created_at', { ascending: false });
-      if (assignmentsError) throw assignmentsError;
-      setAssignments(assignmentsData || []);
+      const [assignmentsResult, applicationsResult, kycResult] = await Promise.allSettled([
+        supabase.from('assignments').select('*').order('created_at', { ascending: false }),
+        
+        supabase.from('applications')
+          .select(`*, interest_reason, assignment:assignments(client_name, branch_name, city, state, assignment_number), auditor:profiles(full_name, email, id, phone)`)
+          .eq('status', 'pending')
+          .order('applied_at', { ascending: false }),
 
-      const total = assignmentsData?.length || 0;
-      const open = assignmentsData?.filter(a => a.status === 'open').length || 0;
-      const allotted = assignmentsData?.filter(a => a.status === 'allotted' || a.status === 'in_progress').length || 0;
-      const completed = assignmentsData?.filter(a => a.status === 'completed' || a.status === 'paid').length || 0;
-      setStats({ total, open, allotted, completed });
+        supabase.from('auditor_profiles')
+          .select(`*, profiles(full_name, email, phone)`) 
+          .eq('kyc_status', 'pending')
+          .order('created_at', { ascending: false })
+      ]);
 
-      const { data: applicationsData, error: applicationsError } = await supabase
-        .from('applications')
-        .select(`*, assignment:assignments(client_name, branch_name, city, state, assignment_number), auditor:profiles!applications_auditor_id_fkey(full_name, email, id)`)
-        .eq('status', 'pending').order('applied_at', { ascending: false });
-      if (applicationsError) throw applicationsError;
-      setApplications(applicationsData || []);
-
-      if (applicationsData && applicationsData.length > 0) {
-        const auditorIds = applicationsData.map(app => app.auditor_id);
-        const { data: profilesData } = await supabase.from('auditor_profiles').select('user_id, rating').in('user_id', auditorIds);
-        const ratingsMap: Record<string, number> = {};
-        profilesData?.forEach(profile => { ratingsMap[profile.user_id] = profile.rating || 0; });
-        setAuditorRatings(ratingsMap);
+      if (assignmentsResult.status === 'fulfilled' && assignmentsResult.value.data) {
+        const data = assignmentsResult.value.data;
+        setAssignments(data);
+        setStats({
+          total: data.length,
+          open: data.filter(a => a.status === 'open').length,
+          allotted: data.filter(a => a.status === 'allotted' || a.status === 'in_progress').length,
+          completed: data.filter(a => a.status === 'completed' || a.status === 'paid').length
+        });
       }
 
-      const { data: kycData, error: kycError } = await supabase
-        .from('auditor_profiles')
-        .select(`*, profiles:user_id (full_name, email)`)
-        .eq('kyc_status', 'pending').order('created_at', { ascending: false });
-      if (kycError) throw kycError;
-      setPendingKyc(kycData || []);
+      if (applicationsResult.status === 'fulfilled' && applicationsResult.value.data) {
+        const apps = applicationsResult.value.data;
+        setApplications(apps);
+        
+        if (apps.length > 0) {
+          const auditorIds = apps.map(app => app.auditor_id);
+          const { data: profilesData } = await supabase
+            .from('auditor_profiles')
+            .select('user_id, rating, experience_years')
+            .in('user_id', auditorIds);
+            
+          const detailsMap: Record<string, { rating: number, experience: number }> = {};
+          profilesData?.forEach(profile => { 
+            detailsMap[profile.user_id] = { 
+              rating: profile.rating || 0,
+              experience: profile.experience_years || 0
+            }; 
+          });
+          setAuditorDetails(detailsMap);
+        }
+      }
+
+      if (kycResult.status === 'fulfilled' && kycResult.value.data) {
+        setPendingKyc(kycResult.value.data);
+      }
+
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error("Error loading dashboard data");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { error } = await supabase.from('assignments').insert({
-        ...formData, fees: parseFloat(formData.fees), ope: parseFloat(formData.ope) || 0, created_by: user?.id,
-      });
-      if (error) throw error;
-      toast.success('Assignment created successfully!');
-      setShowCreateDialog(false);
-      setFormData({ client_name: '', branch_name: '', address: '', city: '', state: '', pincode: '', audit_type: 'Stock Audit', audit_date: '', deadline_date: '', fees: '', ope: '' });
-      fetchData();
-    } catch (error: any) { toast.error(error.message); }
-  };
-
-  const handleKycApproval = async (userId: string, status: 'approved' | 'rejected', reason?: string) => {
-    try {
-      const updateData: any = { kyc_status: status };
-      if (status === 'rejected' && reason) {
-        updateData.rejection_reason = reason;
-      } else if (status === 'approved') {
-        updateData.rejection_reason = null; // Clear any previous rejection reason
+  const groupedApplications = useMemo(() => {
+    const grouped: Record<string, { assignment: any, applicants: any[] }> = {};
+    
+    applications.forEach(app => {
+      const assignId = app.assignment_id;
+      if (!grouped[assignId]) {
+        grouped[assignId] = {
+          assignment: app.assignment,
+          applicants: []
+        };
       }
-      const { error } = await supabase.from('auditor_profiles').update(updateData).eq('user_id', userId);
-      if (error) throw error;
-      toast.success(`KYC ${status} successfully!`);
-      setRejectionDialogOpen(false);
-      setSelectedKycUser(null);
-      setRejectionReason('');
-      fetchData();
-    } catch (error: any) { toast.error(error.message); }
-  };
+      grouped[assignId].applicants.push(app);
+    });
+    
+    return grouped;
+  }, [applications]);
 
-  const openRejectionDialog = (userId: string) => {
-    setSelectedKycUser(userId);
-    setRejectionReason('');
-    setRejectionDialogOpen(true);
-  };
+  const openApplicationDetail = (app: any) => { setViewingApplication(app); setAppDetailOpen(true); };
 
   const handleAllotAssignment = async (applicationId: string, assignmentId: string, auditorId: string) => {
     try {
-      const { data: assignment } = await supabase.from('assignments').select('*').eq('id', assignmentId).single();
-      const { data: auditor } = await supabase.from('profiles').select('*').eq('id', auditorId).single();
+      const { data: assignment } = await supabase.from('assignments').select('client_name, city').eq('id', assignmentId).single();
+      
+      const { error: assignError } = await supabase.from('assignments').update({ status: 'allotted', allotted_to: auditorId }).eq('id', assignmentId);
+      if (assignError) throw assignError;
 
-      const { error: assignmentError } = await supabase.from('assignments').update({ status: 'allotted', allotted_to: auditorId }).eq('id', assignmentId);
-      if (assignmentError) throw assignmentError;
+      await supabase.from('applications').update({ status: 'accepted' }).eq('id', applicationId);
+      
+      await supabase.from('notifications').insert({
+        user_id: auditorId,
+        title: 'Application Accepted! 🎉',
+        message: `You have been selected for the audit of ${assignment?.client_name} in ${assignment?.city}. Check 'My Assignments' for details.`,
+        type: 'success',
+        related_assignment_id: assignmentId,
+        read: false
+      });
 
-      const { error: applicationError } = await supabase.from('applications').update({ status: 'accepted' }).eq('id', applicationId);
-      if (applicationError) throw applicationError;
+      const { data: rejectedApps } = await supabase
+        .from('applications')
+        .select('id, auditor_id')
+        .eq('assignment_id', assignmentId)
+        .neq('id', applicationId);
 
-      await supabase.from('applications').update({ status: 'rejected' }).eq('assignment_id', assignmentId).neq('id', applicationId);
+      if (rejectedApps && rejectedApps.length > 0) {
+        const rejectedIds = rejectedApps.map(a => a.id);
+        
+        await supabase.from('applications').update({ status: 'rejected' }).in('id', rejectedIds);
 
-      if (assignment && auditor) {
-        await supabase.functions.invoke('send-assignment-notification', {
-          body: { to: auditor.email, auditorName: auditor.full_name, assignmentDetails: { clientName: assignment.client_name, branchName: assignment.branch_name, city: assignment.city, state: assignment.state, auditDate: assignment.audit_date, fees: assignment.fees } },
-        });
-        await supabase.functions.invoke('create-notification', {
-          body: { user_id: auditorId, title: 'Assignment Allotted', message: `You have been assigned to ${assignment.client_name} - ${assignment.branch_name}. Assignment #${assignment.assignment_number}`, type: 'success', related_assignment_id: assignmentId },
-        });
+        const notifications = rejectedApps.map(app => ({
+          user_id: app.auditor_id,
+          title: 'Application Update',
+          message: `Thank you for your interest in ${assignment?.client_name}. Another auditor was selected for this assignment.`,
+          type: 'info',
+          related_assignment_id: assignmentId,
+          read: false
+        }));
+        
+        await supabase.from('notifications').insert(notifications);
       }
-      toast.success('Assignment allotted successfully!');
+
+      toast.success('Assignment allotted & notifications sent!');
+      setAppDetailOpen(false);
       fetchData();
     } catch (error: any) { toast.error(error.message); }
   };
-
-  const handleDeleteAssignment = async (assignmentId: string) => {
-    if (!confirm('Are you sure you want to delete this assignment?')) return;
-    try {
-      const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
-      if (error) throw error;
-      toast.success('Assignment deleted successfully!');
-      fetchData();
-    } catch (error: any) { toast.error(error.message); }
-  };
-
-  const handleChangeAllocation = async (assignmentId: string) => {
-    try {
-      const { error } = await supabase.from('assignments').update({ allotted_to: null, status: 'open' }).eq('id', assignmentId);
-      if (error) throw error;
-      toast.success('Allocation cleared. Assignment is now open for new applications.');
-      fetchData();
-    } catch (error: any) { toast.error(error.message); }
-  };
-
-  const handleCompleteAssignment = async (assignmentId: string, rating?: number) => {
-    try {
-      const updateData: any = { status: 'completed', completed_at: new Date().toISOString() };
-      if (rating) updateData.auditor_rating = rating;
-
-      const { data: assignment, error } = await supabase.from('assignments').update(updateData).eq('id', assignmentId).select('allotted_to').single();
-      if (error) throw error;
-
-      if (assignment?.allotted_to) {
-        await supabase.functions.invoke('create-notification', {
-          body: { user_id: assignment.allotted_to, title: 'Assignment Completed', message: rating ? `Your assignment has been marked complete with a rating of ${rating}/5 stars!` : 'Your assignment has been marked as completed.', type: 'success', related_assignment_id: assignmentId },
-        });
-      }
-      toast.success('Assignment marked as completed');
-      fetchData();
-    } catch (error: any) { toast.error(error.message); }
-  };
-
-  const openRatingDialog = (assignmentId: string) => { setSelectedAssignmentForRating(assignmentId); setTempRating(0); setRatingDialogOpen(true); };
-  const submitRating = () => { if (selectedAssignmentForRating && tempRating > 0) { handleCompleteAssignment(selectedAssignmentForRating, tempRating); setRatingDialogOpen(false); setSelectedAssignmentForRating(null); setTempRating(0); } };
 
   const handleDeleteApplication = async (applicationId: string) => {
-    if (!confirm('Are you sure you want to delete this application?')) return;
+    if (!confirm('Are you sure you want to reject this application?')) return;
     try {
       const { error } = await supabase.from('applications').delete().eq('id', applicationId);
       if (error) throw error;
-      toast.success('Application deleted successfully!');
+      toast.success('Application rejected.');
+      setAppDetailOpen(false);
       fetchData();
     } catch (error: any) { toast.error(error.message); }
   };
 
-  const handleBulkStatusUpdate = async () => {
-    if (selectedAssignments.length === 0 || !bulkStatus) { toast.error('Please select assignments and status'); return; }
-    try {
-      const { error } = await supabase.from('assignments').update({ status: bulkStatus }).in('id', selectedAssignments);
-      if (error) throw error;
-      toast.success(`${selectedAssignments.length} assignments updated`);
-      setSelectedAssignments([]); setBulkStatus(''); setShowBulkActions(false);
-      fetchData();
-    } catch (error: any) { toast.error(error.message); }
-  };
+  const handleCreateAssignment = async (e: React.FormEvent) => { e.preventDefault(); try { await supabase.from('assignments').insert({ ...formData, fees: parseFloat(formData.fees), ope: parseFloat(formData.ope) || 0, created_by: user?.id }); toast.success('Created!'); setShowCreateDialog(false); fetchData(); } catch (err: any) { toast.error(err.message); } };
+  const handleKycApproval = async (uid: string, status: string, reason?: string) => { try { await supabase.from('auditor_profiles').update({ kyc_status: status, rejection_reason: reason || null }).eq('user_id', uid); toast.success(`KYC ${status}`); setKycDetailOpen(false); setRejectionDialogOpen(false); fetchData(); } catch (err: any) { toast.error(err.message); } };
+  const handleDownloadResume = async (path: string) => { if(!path) return; try { const {data} = await supabase.storage.from('kyc-documents').createSignedUrl(path.startsWith('http') ? path.split('kyc-documents/')[1] : path, 3600); if(data?.signedUrl) window.open(data.signedUrl); } catch(e:any) { toast.error(e.message); } };
+  const handleDeleteAssignment = async (id: string) => { if(confirm('Delete?')) { await supabase.from('assignments').delete().eq('id', id); fetchData(); } };
+  const handleChangeAllocation = async (id: string) => { await supabase.from('assignments').update({ allotted_to: null, status: 'open' }).eq('id', id); fetchData(); };
+  const submitRating = async () => { if(selectedAssignmentForRating && tempRating > 0) { await supabase.from('assignments').update({ status: 'completed', auditor_rating: tempRating, completed_at: new Date().toISOString() }).eq('id', selectedAssignmentForRating); setRatingDialogOpen(false); fetchData(); toast.success('Rated!'); } };
+  const openViewDetails = (p: any) => { setViewingKycProfile(p); setKycDetailOpen(true); };
 
-  const filteredAssignments = assignments.filter(assignment => {
-    if (filterStatus !== 'all' && assignment.status !== filterStatus) return false;
-    if (filterState !== 'all' && assignment.state !== filterState) return false;
-    if (filterCity !== 'all' && assignment.city !== filterCity) return false;
-    if (filterAuditType !== 'all' && assignment.audit_type !== filterAuditType) return false;
-    if (filterDateFrom && new Date(assignment.audit_date) < new Date(filterDateFrom)) return false;
-    if (filterDateTo && new Date(assignment.audit_date) > new Date(filterDateTo)) return false;
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return assignment.client_name?.toLowerCase().includes(query) || assignment.branch_name?.toLowerCase().includes(query) || assignment.city?.toLowerCase().includes(query) || assignment.assignment_number?.toLowerCase().includes(query);
-    }
+  const filteredAssignments = assignments.filter(a => {
+    if (filterStatus !== 'all' && a.status !== filterStatus) return false;
+    if (searchQuery) return a.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) || a.city?.toLowerCase().includes(searchQuery.toLowerCase());
     return true;
   });
-
-  const uniqueStates = [...new Set(assignments.map(a => a.state))];
-  const uniqueCities = [...new Set(assignments.map(a => a.city))];
-  const uniqueAuditTypes = [...new Set(assignments.map(a => a.audit_type))];
-
-  const handleFilterChange = (filters: any) => {
-    if (filters.status !== undefined) setFilterStatus(filters.status);
-    if (filters.state !== undefined) setFilterState(filters.state);
-    if (filters.city !== undefined) setFilterCity(filters.city);
-    if (filters.auditType !== undefined) setFilterAuditType(filters.auditType);
-    if (filters.dateFrom !== undefined) setFilterDateFrom(filters.dateFrom);
-    if (filters.dateTo !== undefined) setFilterDateTo(filters.dateTo);
-  };
-
-  const resetFilters = () => { setFilterStatus('all'); setFilterState('all'); setFilterCity('all'); setFilterAuditType('all'); setFilterDateFrom(''); setFilterDateTo(''); };
-
   const toggleAssignmentSelection = (id: string) => setSelectedAssignments(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedAssignments(selectedAssignments.length === filteredAssignments.length ? [] : filteredAssignments.map(a => a.id));
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
   return (
-    <DashboardLayout title="Admin Dashboard" navItems={adminNavItems} activeTab={activeTab} onTabChange={setActiveTab}>
-      {/* Overview Tab */}
+    <DashboardLayout title="Admin Dashboard" navItems={adminNavItems} activeTab={activeTab} onTabChange={handleTabChange}>
+      
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card className="border-0 shadow-md bg-gradient-to-br from-primary/5 to-primary/10 hover:shadow-lg transition-all duration-300">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardDescription className="text-sm font-medium text-muted-foreground">Total Assignments</CardDescription>
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Briefcase className="h-5 w-5 text-primary" />
-                  </div>
-                </div>
-                <CardTitle className="text-3xl font-bold mt-2">{stats.total}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="border-0 shadow-md bg-gradient-to-br from-amber-500/5 to-amber-500/10 hover:shadow-lg transition-all duration-300">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardDescription className="text-sm font-medium text-muted-foreground">Open</CardDescription>
-                  <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                    <Clock className="h-5 w-5 text-amber-500" />
-                  </div>
-                </div>
-                <CardTitle className="text-3xl font-bold mt-2">{stats.open}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="border-0 shadow-md bg-gradient-to-br from-blue-500/5 to-blue-500/10 hover:shadow-lg transition-all duration-300">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardDescription className="text-sm font-medium text-muted-foreground">Allotted</CardDescription>
-                  <div className="h-10 w-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                    <Users className="h-5 w-5 text-blue-500" />
-                  </div>
-                </div>
-                <CardTitle className="text-3xl font-bold mt-2">{stats.allotted}</CardTitle>
-              </CardHeader>
-            </Card>
-            <Card className="border-0 shadow-md bg-gradient-to-br from-green-500/5 to-green-500/10 hover:shadow-lg transition-all duration-300">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardDescription className="text-sm font-medium text-muted-foreground">Completed</CardDescription>
-                  <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
-                  </div>
-                </div>
-                <CardTitle className="text-3xl font-bold mt-2">{stats.completed}</CardTitle>
-              </CardHeader>
-            </Card>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <Card><CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.total}</CardTitle><CardDescription>Total</CardDescription></CardHeader></Card>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.open}</CardTitle><CardDescription>Open</CardDescription></CardHeader></Card>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.allotted}</CardTitle><CardDescription>Allotted</CardDescription></CardHeader></Card>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-3xl">{stats.completed}</CardTitle><CardDescription>Completed</CardDescription></CardHeader></Card>
           </div>
-
-          {/* Analytics */}
           <DashboardAnalytics assignments={assignments} />
         </div>
       )}
 
-      {/* Assignments Tab */}
       {activeTab === 'assignments' && (
         <div className="space-y-4">
-          <div className="flex flex-wrap gap-3">
+          <div className="flex gap-2">
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-              <DialogTrigger asChild>
-                <Button><Plus className="h-4 w-4 mr-2" />Create Assignment</Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Create New Assignment</DialogTitle>
-                  <DialogDescription>Add a new audit assignment</DialogDescription>
-                </DialogHeader>
+              <Button onClick={() => setShowCreateDialog(true)}><Plus className="mr-2 h-4 w-4" /> Create Assignment</Button>
+              <DialogContent className="max-h-[90vh] overflow-y-auto">
+                <DialogHeader><DialogTitle>New Assignment</DialogTitle></DialogHeader>
                 <form onSubmit={handleCreateAssignment} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Client Name</Label><Input value={formData.client_name} onChange={(e) => setFormData({ ...formData, client_name: e.target.value })} required /></div>
-                    <div className="space-y-2"><Label>Branch Name</Label><Input value={formData.branch_name} onChange={(e) => setFormData({ ...formData, branch_name: e.target.value })} required /></div>
+                    <Input placeholder="Client Name" value={formData.client_name} onChange={e => setFormData({...formData, client_name: e.target.value})} required />
+                    <Input placeholder="Branch" value={formData.branch_name} onChange={e => setFormData({...formData, branch_name: e.target.value})} required />
                   </div>
-                  <div className="space-y-2"><Label>Address</Label><Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} required /></div>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2"><Label>City</Label><Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} required /></div>
-                    <div className="space-y-2"><Label>State</Label><Input value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} required /></div>
-                    <div className="space-y-2"><Label>Pincode</Label><Input value={formData.pincode} onChange={(e) => setFormData({ ...formData, pincode: e.target.value })} required /></div>
+                  <Input placeholder="Address" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} required />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Input placeholder="City" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} required />
+                    <Input placeholder="State" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} required />
+                    <Input placeholder="Pincode" value={formData.pincode} onChange={e => setFormData({...formData, pincode: e.target.value})} required />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Audit Type</Label>
-                    <Select value={formData.audit_type} onValueChange={(v) => setFormData({ ...formData, audit_type: v })}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Select value={formData.audit_type} onValueChange={(v) => setFormData({ ...formData, audit_type: v })}>
+                      <SelectTrigger><SelectValue placeholder="Audit Type" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Stock Audit">Stock Audit</SelectItem>
                         <SelectItem value="Concurrent Audit">Concurrent Audit</SelectItem>
                         <SelectItem value="Credit Audit">Credit Audit</SelectItem>
-                        <SelectItem value="Revenue Audit">Revenue Audit</SelectItem>
-                        <SelectItem value="Tax Audit">Tax Audit</SelectItem>
                       </SelectContent>
-                    </Select>
+                  </Select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input type="date" value={formData.audit_date} onChange={e => setFormData({...formData, audit_date: e.target.value})} required />
+                    <Input type="date" value={formData.deadline_date} onChange={e => setFormData({...formData, deadline_date: e.target.value})} required />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Audit Date</Label><Input type="date" value={formData.audit_date} onChange={(e) => setFormData({ ...formData, audit_date: e.target.value })} required /></div>
-                    <div className="space-y-2"><Label>Deadline Date</Label><Input type="date" value={formData.deadline_date} onChange={(e) => setFormData({ ...formData, deadline_date: e.target.value })} required /></div>
+                    <Input placeholder="Fees" type="number" value={formData.fees} onChange={e => setFormData({...formData, fees: e.target.value})} required />
+                    <Input placeholder="OPE" type="number" value={formData.ope} onChange={e => setFormData({...formData, ope: e.target.value})} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Fees (₹)</Label><Input type="number" step="0.01" value={formData.fees} onChange={(e) => setFormData({ ...formData, fees: e.target.value })} required /></div>
-                    <div className="space-y-2"><Label>OPE (₹)</Label><Input type="number" step="0.01" value={formData.ope} onChange={(e) => setFormData({ ...formData, ope: e.target.value })} /></div>
-                  </div>
-                  <Button type="submit" className="w-full">Create Assignment</Button>
+                  <Button type="submit" className="w-full">Create</Button>
                 </form>
               </DialogContent>
             </Dialog>
             <BulkUploadDialog userId={user?.id || ''} onSuccess={fetchData} />
           </div>
-
+          
           <AssignmentSearchExport assignments={filteredAssignments} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
-          <AssignmentFilters filterStatus={filterStatus} filterState={filterState} filterCity={filterCity} filterAuditType={filterAuditType} filterDateFrom={filterDateFrom} filterDateTo={filterDateTo} onFilterChange={handleFilterChange} onReset={resetFilters} states={uniqueStates} cities={uniqueCities} auditTypes={uniqueAuditTypes} />
-
-          <Card className="border-0 shadow-lg">
-            <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10 border-b border-border/50">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-lg font-semibold">All Assignments</CardTitle>
-                  <CardDescription>{filteredAssignments.length} assignments found</CardDescription>
-                </div>
-                {selectedAssignments.length > 0 && <Button variant="outline" size="sm" onClick={() => setShowBulkActions(!showBulkActions)}>Bulk Actions ({selectedAssignments.length})</Button>}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {showBulkActions && selectedAssignments.length > 0 && (
-                <div className="p-4 border rounded-lg bg-muted/50 mb-4 flex gap-4 items-end flex-wrap">
-                  <div className="flex-1 min-w-[150px]">
-                    <Label>Status</Label>
-                    <Select value={bulkStatus} onValueChange={setBulkStatus}>
-                      <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="open">Open</SelectItem>
-                        <SelectItem value="allotted">Allotted</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button onClick={handleBulkStatusUpdate}>Update</Button>
-                  <Button variant="ghost" onClick={() => { setSelectedAssignments([]); setShowBulkActions(false); }}>Cancel</Button>
-                </div>
-              )}
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12"><Checkbox checked={selectedAssignments.length === filteredAssignments.length && filteredAssignments.length > 0} onCheckedChange={toggleSelectAll} /></TableHead>
-                      <TableHead>Assign #</TableHead>
-                      <TableHead>Client</TableHead>
-                      <TableHead>Branch</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Fees</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
+          
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10"><Checkbox checked={selectedAssignments.length > 0 && selectedAssignments.length === filteredAssignments.length} onCheckedChange={toggleSelectAll} /></TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAssignments.map(a => (
+                    <TableRow key={a.id}>
+                      <TableCell><Checkbox checked={selectedAssignments.includes(a.id)} onCheckedChange={() => toggleAssignmentSelection(a.id)} /></TableCell>
+                      <TableCell>{a.client_name} - {a.branch_name}</TableCell>
+                      <TableCell>{a.city}, {a.state}</TableCell>
+                      <TableCell>{new Date(a.audit_date).toLocaleDateString()}</TableCell>
+                      <TableCell><StatusBadge status={a.status} /></TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="destructive" onClick={() => handleDeleteAssignment(a.id)}>Delete</Button>
+                          {a.status === 'allotted' && <Button size="sm" variant="outline" onClick={() => handleChangeAllocation(a.id)}>Change</Button>}
+                        </div>
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAssignments.map((a) => (
-                      <TableRow key={a.id}>
-                        <TableCell><Checkbox checked={selectedAssignments.includes(a.id)} onCheckedChange={() => toggleAssignmentSelection(a.id)} /></TableCell>
-                        <TableCell className="font-mono text-xs">{a.assignment_number}</TableCell>
-                        <TableCell className="font-medium">{a.client_name}</TableCell>
-                        <TableCell>{a.branch_name}</TableCell>
-                        <TableCell>{a.city}, {a.state}</TableCell>
-                        <TableCell>{a.audit_type}</TableCell>
-                        <TableCell>{new Date(a.audit_date).toLocaleDateString('en-IN')}</TableCell>
-                        <TableCell>₹{a.fees?.toLocaleString('en-IN')}</TableCell>
-                        <TableCell><StatusBadge status={a.status} /></TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            {a.status === 'allotted' && (
-                              <>
-                                <Button size="sm" variant="outline" onClick={() => handleChangeAllocation(a.id)}>Change</Button>
-                                <Button size="sm" variant="outline" onClick={() => openRatingDialog(a.id)}><Star className="h-3 w-3" /></Button>
-                              </>
-                            )}
-                            <Button size="sm" variant="destructive" onClick={() => handleDeleteAssignment(a.id)}>Delete</Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* Deadlines Tab */}
-      {activeTab === 'deadlines' && <DeadlineReminders />}
-
-      {/* Auditors Tab */}
-      {activeTab === 'auditors' && <AuditorsList />}
-
-      {/* Applications Tab */}
       {activeTab === 'applications' && (
-        <Card className="border-0 shadow-lg">
-          <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10 border-b border-border/50">
-            <CardTitle className="text-lg font-semibold">Pending Applications</CardTitle>
-            <CardDescription>Review and allot assignments to auditors</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6">
-            {applications.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No pending applications</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Assignment #</TableHead>
-                      <TableHead>Client</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Auditor</TableHead>
-                      <TableHead>Rating</TableHead>
-                      <TableHead>Applied</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {applications.map((app: any) => (
-                      <TableRow key={app.id}>
-                        <TableCell className="font-mono text-xs">{app.assignment?.assignment_number}</TableCell>
-                        <TableCell className="font-medium">{app.assignment?.client_name}</TableCell>
-                        <TableCell>{app.assignment?.city}, {app.assignment?.state}</TableCell>
-                        <TableCell>{app.auditor?.full_name}</TableCell>
-                        <TableCell>{auditorRatings[app.auditor_id] ? <div className="flex items-center gap-1"><Star className="h-4 w-4 fill-amber-400 text-amber-400" />{auditorRatings[app.auditor_id]}</div> : <span className="text-muted-foreground">-</span>}</TableCell>
-                        <TableCell>{new Date(app.applied_at).toLocaleDateString('en-IN')}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleAllotAssignment(app.id, app.assignment_id, app.auditor_id)}>Allot</Button>
-                            <Button size="sm" variant="destructive" onClick={() => handleDeleteApplication(app.id)}>Reject</Button>
-                          </div>
-                        </TableCell>
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold tracking-tight">Pending Applications</h2>
+            <Badge variant="secondary">{applications.length} total pending</Badge>
+          </div>
+
+          {applications.length === 0 ? (
+            <Card><CardContent className="py-8 text-center text-muted-foreground">No pending applications</CardContent></Card>
+          ) : (
+            Object.entries(groupedApplications).map(([assignmentId, group]) => (
+              <Card key={assignmentId} className="border-l-4 border-l-primary shadow-sm overflow-hidden">
+                <CardHeader className="bg-muted/10 pb-3 border-b">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <CardTitle className="text-lg">{group.assignment.client_name} - {group.assignment.branch_name}</CardTitle>
+                      <CardDescription className="flex items-center gap-2 mt-1">
+                        <MapPin className="h-3 w-3" /> {group.assignment.city}, {group.assignment.state}
+                        <span className="text-muted-foreground/30">•</span>
+                        <span>ID: {group.assignment.assignment_number || 'N/A'}</span>
+                      </CardDescription>
+                    </div>
+                    <Badge variant="outline" className="bg-background">{group.applicants.length} Applicants</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/5 hover:bg-muted/5">
+                        <TableHead className="w-[30%]">Auditor Details</TableHead>
+                        <TableHead>Experience</TableHead>
+                        <TableHead>Rating</TableHead>
+                        <TableHead>Applied On</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {group.applicants.map((app: any) => {
+                        const details = auditorDetails[app.auditor_id] || { rating: 0, experience: 0 };
+                        return (
+                          <TableRow key={app.id}>
+                            <TableCell>
+                              <div className="font-medium text-base">{app.auditor?.full_name}</div>
+                              <div className="text-xs text-muted-foreground flex flex-col gap-0.5 mt-0.5">
+                                <span className="flex items-center gap-1"><Mail className="h-3 w-3"/> {app.auditor?.email}</span>
+                                <span className="flex items-center gap-1"><Phone className="h-3 w-3"/> {app.auditor?.phone || 'N/A'}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium">{details.experience} Years</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-full w-fit">
+                                <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
+                                <span className="text-xs font-semibold text-amber-700">{details.rating}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {new Date(app.applied_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button size="sm" variant="outline" onClick={() => openApplicationDetail(app)}>
+                                Review Application
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
       )}
 
-      {/* Reports Tab */}
-      {activeTab === 'reports' && <ReportsManagement />}
-
-      {/* KYC Approvals Tab */}
       {activeTab === 'kyc-approvals' && (
-        <Card className="border-0 shadow-lg">
-          <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10 border-b border-border/50">
-            <CardTitle className="text-lg font-semibold">Pending KYC Approvals</CardTitle>
-            <CardDescription>Review auditor registrations and verify documents</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6">
-            {pendingKyc.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No pending KYC approvals</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Qualifications</TableHead>
-                      <TableHead>Experience</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pendingKyc.map((kyc) => (
-                      <TableRow key={kyc.id}>
-                        <TableCell className="font-medium">{kyc.profiles?.full_name}</TableCell>
-                        <TableCell>{kyc.profiles?.email}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                            {kyc.qualifications?.map((q: string) => <span key={q} className="px-2 py-0.5 bg-primary/10 text-primary rounded text-xs">{q}</span>)}
-                          </div>
-                        </TableCell>
-                        <TableCell>{kyc.experience_years} years</TableCell>
-                        <TableCell>{kyc.base_city}, {kyc.base_state}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => handleKycApproval(kyc.user_id, 'approved')}>Approve</Button>
-                            <Button size="sm" variant="destructive" onClick={() => openRejectionDialog(kyc.user_id)}>Reject</Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+        <Card>
+          <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
+          <CardContent>
+            {pendingKyc.length === 0 ? <p className="text-center py-8 text-muted-foreground">No pending KYC</p> : (
+              <Table>
+                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Location</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
+                <TableBody>{pendingKyc.map(kyc => (<TableRow key={kyc.id}><TableCell>{kyc.profiles?.full_name}</TableCell><TableCell>{kyc.base_city}</TableCell><TableCell><Button size="sm" onClick={() => openViewDetails(kyc)}><Eye className="h-4 w-4 mr-1"/> View</Button></TableCell></TableRow>))}</TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>
       )}
 
-      {/* User Roles Tab */}
+      {activeTab === 'deadlines' && <DeadlineReminders />}
+      {activeTab === 'auditors' && <AuditorsList />}
+      {activeTab === 'reports' && <ReportsManagement />}
       {activeTab === 'user-roles' && <UserRoleManagement />}
 
-      {/* Rating Dialog */}
-      <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
-        <DialogContent>
+      <Dialog open={appDetailOpen} onOpenChange={setAppDetailOpen}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Rate Auditor & Complete</DialogTitle>
-            <DialogDescription>Provide a rating (1-5 stars)</DialogDescription>
+            <DialogTitle>Application Review</DialogTitle>
+            <DialogDescription>Review application details</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-center gap-2 py-4">
-            {[1, 2, 3, 4, 5].map((r) => (
-              <button key={r} onClick={() => setTempRating(r)} className="transition-transform hover:scale-110">
-                <Star className={`h-10 w-10 ${r <= tempRating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} />
-              </button>
-            ))}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setRatingDialogOpen(false)}>Cancel</Button>
-            <Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button>
-          </div>
+          {viewingApplication && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4 border-b pb-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Auditor Name</Label>
+                  <div className="font-semibold text-lg">{viewingApplication.auditor?.full_name}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Contact</Label>
+                  <div className="flex items-center gap-2 text-sm"><Phone className="h-3 w-3"/> {viewingApplication.auditor?.phone || 'N/A'}</div>
+                  <div className="flex items-center gap-2 text-sm"><Mail className="h-3 w-3"/> {viewingApplication.auditor?.email}</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Experience</Label>
+                  <div className="font-medium">{auditorDetails[viewingApplication.auditor_id]?.experience} Years</div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Current Rating</Label>
+                  <div className="flex items-center gap-1 font-medium"><Star className="h-3 w-3 text-amber-500 fill-amber-500"/> {auditorDetails[viewingApplication.auditor_id]?.rating}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2 text-primary font-semibold">
+                  <MessageSquare className="h-4 w-4" /> Interest Reason
+                </Label>
+                <div className="bg-muted/30 p-4 rounded-lg text-sm italic border">
+                  "{viewingApplication.interest_reason || 'No reason provided.'}"
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setAppDetailOpen(false)}>Close</Button>
+                <Button variant="destructive" onClick={() => handleDeleteApplication(viewingApplication.id)}>Reject Application</Button>
+                <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleAllotAssignment(viewingApplication.id, viewingApplication.assignment_id, viewingApplication.auditor_id)}>
+                  Allot Assignment
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
-      {/* KYC Rejection Dialog */}
-      <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reject KYC Application</DialogTitle>
-            <DialogDescription>Please provide a reason for rejection. This will be shown to the auditor.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="rejection-reason">Rejection Reason *</Label>
-              <textarea
-                id="rejection-reason"
-                className="w-full min-h-[100px] px-3 py-2 rounded-md border border-input bg-background text-sm"
-                placeholder="e.g., PAN card number is invalid, Resume not uploaded, etc."
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-              />
+      <Dialog open={kycDetailOpen} onOpenChange={setKycDetailOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Auditor Profile</DialogTitle></DialogHeader>
+          {viewingKycProfile && (
+            <div className="space-y-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><Label>Name</Label><div>{viewingKycProfile.profiles?.full_name}</div></div>
+                <div><Label>Email</Label><div>{viewingKycProfile.profiles?.email}</div></div>
+                <div><Label>Phone</Label><div>{viewingKycProfile.profiles?.phone || 'N/A'}</div></div>
+                <div><Label>Location</Label><div>{viewingKycProfile.base_city}, {viewingKycProfile.base_state}</div></div>
+              </div>
+              <Separator />
+              <div>
+                <Label>Qualifications</Label>
+                <div className="flex gap-2 mt-1">{viewingKycProfile.qualifications?.map((q: string) => <Badge key={q}>{q}</Badge>)}</div>
+              </div>
+              <div>
+                <Label>Documents</Label>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <Card className="p-3"><div className="text-sm text-muted-foreground">PAN</div><div className="font-mono">{viewingKycProfile.pan_card}</div></Card>
+                  {viewingKycProfile.resume_url && (
+                    <Button variant="outline" className="h-auto py-3 justify-start" onClick={() => handleDownloadResume(viewingKycProfile.resume_url)}>
+                      <Download className="mr-2 h-4 w-4" /> Download Resume
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setRejectionDialogOpen(false)}>Cancel</Button>
-            <Button 
-              variant="destructive" 
-              onClick={() => selectedKycUser && handleKycApproval(selectedKycUser, 'rejected', rejectionReason)}
-              disabled={!rejectionReason.trim()}
-            >
-              Reject KYC
-            </Button>
-          </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setKycDetailOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { setKycDetailOpen(false); setSelectedKycUser(viewingKycProfile.user_id); setRejectionDialogOpen(true); }}>Reject</Button>
+            <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleKycApproval(viewingKycProfile.user_id, 'approved')}>Approve</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reject Application</DialogTitle></DialogHeader>
+          <textarea className="w-full border rounded p-2" placeholder="Reason..." value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectionDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => handleKycApproval(selectedKycUser!, 'rejected', rejectionReason)}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
+        <DialogContent><DialogHeader><DialogTitle>Rate Auditor</DialogTitle></DialogHeader><div className="flex justify-center gap-2 py-4">{[1, 2, 3, 4, 5].map((r) => (<button key={r} onClick={() => setTempRating(r)}><Star className={`h-10 w-10 ${r <= tempRating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} /></button>))}</div><DialogFooter><Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button></DialogFooter></DialogContent>
+      </Dialog>
+
     </DashboardLayout>
   );
 }

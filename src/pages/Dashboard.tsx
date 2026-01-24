@@ -14,34 +14,11 @@ export default function Dashboard() {
     }
   }, [user, loading, navigate]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  // If we are logged in and have a role, show the dashboard
+  if (user && userRole === 'admin') return <AdminDashboard />;
+  if (user && userRole === 'auditor') return <AuditorDashboard />;
+  if (user && userRole === 'client') return <div className="p-8 text-center">Client Dashboard (Coming Soon)</div>;
 
-  if (!user) {
-    return null;
-  }
-
-  // Route to appropriate dashboard based on role
-  if (userRole === 'admin') {
-    return <AdminDashboard />;
-  } else if (userRole === 'auditor') {
-    return <AuditorDashboard />;
-  } else {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">Role Not Assigned</h2>
-          <p className="text-muted-foreground">Please contact an administrator.</p>
-        </div>
-      </div>
-    );
-  }
+  // Otherwise return null (no loading screen, no error screen)
+  return null;
 }

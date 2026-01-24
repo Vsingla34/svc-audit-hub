@@ -1,4 +1,4 @@
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { NotificationBell } from '@/components/NotificationBell';
 import {
@@ -57,7 +57,7 @@ function AppSidebar({
   activeTab?: string; 
   onTabChange?: (tab: string) => void;
 }) {
-  const { signOut, user } = useAuth();
+  const { signOut } = useAuth();
   const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -65,7 +65,6 @@ function AppSidebar({
   return (
     <Sidebar collapsible="icon" className="border-r-0 bg-sidebar">
       <SidebarContent className="pt-6 px-3">
-        {/* Logo/Brand */}
         <div className={cn(
           "flex items-center gap-3 px-3 mb-8",
           collapsed && "justify-center"
@@ -127,7 +126,6 @@ function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Sign Out at bottom */}
         <SidebarGroup className="mt-auto pb-6">
           <SidebarGroupContent>
             <SidebarMenu>
@@ -165,7 +163,6 @@ export function DashboardLayout({
         <AppSidebar navItems={navItems} activeTab={activeTab} onTabChange={onTabChange} />
         
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
           <header className="sticky top-0 z-10 h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="flex h-full items-center gap-4 px-6">
               <SidebarTrigger className="-ml-2 p-2 rounded-lg hover:bg-accent transition-colors">
@@ -182,7 +179,6 @@ export function DashboardLayout({
             </div>
           </header>
 
-          {/* Main Content */}
           <main className="flex-1 overflow-auto">
             <div className="p-6 max-w-[1600px] mx-auto">
               {children}
@@ -194,26 +190,26 @@ export function DashboardLayout({
   );
 }
 
+// Updated NavItems with explicit hrefs for routing
 export const adminNavItems: NavItem[] = [
-  { title: 'Overview', icon: LayoutDashboard },
-  { title: 'Assignments', icon: Briefcase },
-  { title: 'Deadlines', icon: AlertTriangle },
-  { title: 'Auditors', icon: Users },
-  { title: 'Applications', icon: FileCheck },
-  { title: 'Reports', icon: FileText },
-  { title: 'KYC Approvals', icon: Shield },
-  { title: 'User Roles', icon: Shield },
+  { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
+  { title: 'Assignments', icon: Briefcase, href: '/dashboard?tab=assignments' },
+  { title: 'Deadlines', icon: AlertTriangle, href: '/dashboard?tab=deadlines' },
+  { title: 'Auditors', icon: Users, href: '/dashboard?tab=auditors' },
+  { title: 'Applications', icon: FileCheck, href: '/dashboard?tab=applications' },
+  { title: 'Reports', icon: FileText, href: '/dashboard?tab=reports' },
+  { title: 'KYC Approvals', icon: Shield, href: '/dashboard?tab=kyc-approvals' },
+  { title: 'User Roles', icon: Shield, href: '/dashboard?tab=user-roles' },
   { title: 'Map View', icon: MapPin, href: '/map' },
   { title: 'Payments', icon: DollarSign, href: '/payments' },
 ];
 
 export const auditorNavItems: NavItem[] = [
-  { title: 'Overview', icon: LayoutDashboard },
-  { title: 'Edit Profile', icon: UserCog, href: '/profile-edit' },
+  { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
-  { title: 'Available Jobs', icon: Briefcase },
-  { title: 'My Applications', icon: Clock },
-  { title: 'My Assignments', icon: FileCheck },
-  { title: 'Analytics', icon: BarChart3 },
+  { title: 'Available Jobs', icon: Briefcase, href: '/dashboard?tab=available-jobs' },
+  { title: 'My Applications', icon: Clock, href: '/dashboard?tab=my-applications' },
+  { title: 'My Assignments', icon: FileCheck, href: '/dashboard?tab=my-assignments' },
+  { title: 'Analytics', icon: BarChart3, href: '/dashboard?tab=analytics' },
   { title: 'Payments', icon: DollarSign, href: '/payments' },
 ];

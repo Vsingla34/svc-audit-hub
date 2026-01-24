@@ -35,29 +35,37 @@ export function DeadlineReminders() {
 
   const fetchDeadlines = async () => {
     try {
+      setLoading(true);
       const today = new Date();
       const sevenDaysFromNow = new Date();
       sevenDaysFromNow.setDate(today.getDate() + 7);
 
       // Fetch allotted assignments with deadlines
+      // We explicitly join on the 'allotted_to' column to avoid ambiguity
       const { data, error } = await supabase
         .from('assignments')
         .select(`
           *,
-          auditor:profiles!assignments_allotted_to_fkey(full_name, email)
+          auditor:profiles!allotted_to(full_name, email)
         `)
         .in('status', ['allotted', 'in_progress'])
         .not('allotted_to', 'is', null)
         .lte('deadline_date', sevenDaysFromNow.toISOString().split('T')[0])
         .order('deadline_date', { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Fetch error:', error);
+        throw error;
+      }
 
       const overdue: Assignment[] = [];
       const upcoming: Assignment[] = [];
 
       (data || []).forEach((assignment: Assignment) => {
         const deadlineDate = new Date(assignment.deadline_date);
+        
+        // Logic: Past AND Not Today = Overdue
+        // Logic: Today OR Future = Upcoming (within the 7-day query limit)
         if (isPast(deadlineDate) && !isToday(deadlineDate)) {
           overdue.push(assignment);
         } else {
@@ -105,14 +113,6 @@ export function DeadlineReminders() {
     return { label: 'Upcoming', variant: 'secondary' as const, daysText: `${daysUntil} days left` };
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Header Actions */}
@@ -122,8 +122,8 @@ export function DeadlineReminders() {
           <p className="text-muted-foreground">Monitor and manage assignment deadlines</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={fetchDeadlines}>
-            <RefreshCw className="h-4 w-4 mr-2" />
+          <Button variant="outline" onClick={fetchDeadlines} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           <Button onClick={sendDeadlineReminders} disabled={sendingReminders}>
@@ -141,11 +141,13 @@ export function DeadlineReminders() {
             <CardTitle className="text-destructive">Overdue Assignments</CardTitle>
           </div>
           <CardDescription>
-            {overdueAssignments.length} assignments past their deadline
+            Assignments that have passed their submission deadline
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {overdueAssignments.length === 0 ? (
+          {loading && overdueAssignments.length === 0 ? (
+             <div className="py-4 text-center text-muted-foreground">Loading...</div>
+          ) : overdueAssignments.length === 0 ? (
             <p className="text-muted-foreground text-center py-4">No overdue assignments</p>
           ) : (
             <div className="space-y-3">
@@ -160,7 +162,7 @@ export function DeadlineReminders() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{assignment.client_name}</span>
                         <Badge variant="outline" className="text-xs">
-                          #{assignment.assignment_number}
+                          #{assignment.assignment_number?.substring(0, 8)}
                         </Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">
@@ -192,14 +194,16 @@ export function DeadlineReminders() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Clock className="h-5 w-5 text-warning" />
-            <CardTitle>Upcoming Deadlines</CardTitle>
+            <CardTitle>Upcoming Deadlines (Next 7 Days)</CardTitle>
           </div>
           <CardDescription>
-            {upcomingDeadlines.length} assignments due within 7 days
+            Assignments expiring in one week
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {upcomingDeadlines.length === 0 ? (
+          {loading && upcomingDeadlines.length === 0 ? (
+             <div className="py-4 text-center text-muted-foreground">Loading...</div>
+          ) : upcomingDeadlines.length === 0 ? (
             <p className="text-muted-foreground text-center py-4">No upcoming deadlines</p>
           ) : (
             <div className="space-y-3">
@@ -214,7 +218,7 @@ export function DeadlineReminders() {
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{assignment.client_name}</span>
                         <Badge variant="outline" className="text-xs">
-                          #{assignment.assignment_number}
+                          #{assignment.assignment_number?.substring(0, 8)}
                         </Badge>
                       </div>
                       <div className="text-sm text-muted-foreground">

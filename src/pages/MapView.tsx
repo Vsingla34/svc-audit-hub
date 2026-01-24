@@ -1,25 +1,40 @@
-import { useNavigate } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
-import MapboxAssignmentsMap from '@/components/MapboxAssignmentsMap';
+import { useAuth } from '@/lib/auth';
+import { DashboardLayout, adminNavItems, auditorNavItems } from '@/components/DashboardLayout';
+import AuditorsMap from '@/components/AuditorsMap';
+import { Loader2 } from 'lucide-react';
 
 export default function MapView() {
-  const navigate = useNavigate();
+  const { userRole, loading } = useAuth();
+
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+
+  const navItems = userRole === 'auditor' ? auditorNavItems : adminNavItems;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4 flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <h1 className="text-2xl font-bold text-primary">Assignments Map</h1>
+    <DashboardLayout 
+      title="Auditors Map" 
+      navItems={navItems} 
+      activeTab="map-view"
+    >
+      <div className="space-y-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold tracking-tight">Geographic Overview</h2>
+          <p className="text-sm text-muted-foreground">
+            Visualise the distribution of auditors across different states in India.
+          </p>
         </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8">
-        <MapboxAssignmentsMap />
-      </main>
-    </div>
+        
+        
+        <AuditorsMap />
+      </div>
+    </DashboardLayout>
   );
 }

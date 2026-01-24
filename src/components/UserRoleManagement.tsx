@@ -1,129 +1,173 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-import { Search, Shield, UserCog } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { Search, Shield, UserCog } from "lucide-react";
 
-interface User {
+type Role = "admin" | "auditor" | "client" | "none";
+
+interface UserRow {
   id: string;
   email: string;
   full_name: string;
-  role: string;
+  role: Role;
   created_at: string;
 }
 
 export function UserRoleManagement() {
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [newRole, setNewRole] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
+  const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
+  const [newRole, setNewRole] = useState<Role>("none");
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchUsers = async () => {
+    setLoading(true);
     try {
-      // Fetch profiles with their roles
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, created_at')
-        .order('created_at', { ascending: false });
+      // ✅ Single source of truth for roles: profiles.role
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, email, full_name, role, created_at")
+        .order("created_at", { ascending: false });
 
-      if (profilesError) throw profilesError;
+      if (error) throw error;
 
-      // Fetch all user roles
-      const { data: roles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('user_id, role');
+      const mapped: UserRow[] =
+        data?.map((p: any) => ({
+          id: p.id,
+          email: p.email ?? "",
+          full_name: p.full_name ?? "",
+          role: (p.role as Role) ?? "none",
+          created_at: p.created_at,
+        })) ?? [];
 
-      if (rolesError) throw rolesError;
-
-      // Map roles to users
-      const roleMap = new Map<string, string>();
-      roles?.forEach(r => roleMap.set(r.user_id, r.role));
-
-      const usersWithRoles = profiles?.map(p => ({
-        ...p,
-        role: roleMap.get(p.id) || 'none',
-      })) || [];
-
-      setUsers(usersWithRoles);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      toast.error('Failed to fetch users');
+      setUsers(mapped);
+    } catch (err) {
+      console.error("Error fetching users:", err);
+      toast.error("Failed to fetch users");
     } finally {
       setLoading(false);
     }
   };
 
   const handleRoleChange = async () => {
-    if (!selectedUser || !newRole) return;
-    
+    if (!selectedUser) return;
+
+    const targetRole: Role = newRole || "none";
+    if (targetRole === selectedUser.role) return;
+
     setUpdating(true);
     try {
-      // Delete existing role
-      await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', selectedUser.id);
-
-      // Insert new role
+      // ✅ Update role directly in profiles table
       const { error } = await supabase
-        .from('user_roles')
-        .insert({ user_id: selectedUser.id, role: newRole as 'admin' | 'auditor' | 'client' });
+        .from("profiles")
+        .update({ role: targetRole === "none" ? null : targetRole })
+        .eq("id", selectedUser.id);
 
       if (error) throw error;
 
-      // If changing to auditor, ensure auditor profile exists
-      if (newRole === 'auditor') {
-        await supabase
-          .from('auditor_profiles')
-          .upsert({ user_id: selectedUser.id }, { onConflict: 'user_id' });
+      // Optional: if changing to auditor, ensure auditor profile exists
+      if (targetRole === "auditor") {
+        const { error: upsertErr } = await supabase
+          .from("auditor_profiles")
+          .upsert({ user_id: selectedUser.id }, { onConflict: "user_id" });
+
+        if (upsertErr) {
+          // not blocking (role update already done), but helpful to know
+          console.warn("auditor_profiles upsert warning:", upsertErr);
+        }
       }
 
-      toast.success(`Role updated to ${newRole} for ${selectedUser.full_name}`);
+      toast.success(
+        `Role updated to ${targetRole} for ${selectedUser.full_name || selectedUser.email || "user"}`
+      );
+
+      // Optimistic UI update
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === selectedUser.id ? { ...u, role: targetRole } : u
+        )
+      );
+
       setShowRoleDialog(false);
       setSelectedUser(null);
-      setNewRole('');
-      fetchUsers();
-    } catch (error) {
-      console.error('Error updating role:', error);
-      toast.error('Failed to update role');
+      setNewRole("none");
+    } catch (err) {
+      console.error("Error updating role:", err);
+      toast.error("Failed to update role");
     } finally {
       setUpdating(false);
     }
   };
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = 
-      user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+  const filteredUsers = users.filter((u) => {
+    const name = (u.full_name || "").toLowerCase();
+    const email = (u.email || "").toLowerCase();
+    const q = searchQuery.toLowerCase();
+
+    const matchesSearch = name.includes(q) || email.includes(q);
+    const matchesRole = roleFilter === "all" || u.role === roleFilter;
     return matchesSearch && matchesRole;
   });
 
-  const getRoleBadgeVariant = (role: string) => {
+  const getRoleBadgeVariant = (role: Role) => {
     switch (role) {
-      case 'admin': return 'destructive';
-      case 'auditor': return 'default';
-      case 'client': return 'secondary';
-      default: return 'outline';
+      case "admin":
+        return "destructive";
+      case "auditor":
+        return "default";
+      case "client":
+        return "secondary";
+      default:
+        return "outline";
     }
   };
 
   if (loading) {
-    return <div className="text-center py-8 text-muted-foreground">Loading users...</div>;
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        Loading users...
+      </div>
+    );
   }
 
   return (
@@ -137,11 +181,12 @@ export function UserRoleManagement() {
           </div>
         </div>
       </CardHeader>
+
       <CardContent className="space-y-4">
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search by name or email..."
               value={searchQuery}
@@ -149,8 +194,9 @@ export function UserRoleManagement() {
               className="pl-10"
             />
           </div>
-          <Select value={roleFilter} onValueChange={setRoleFilter}>
-            <SelectTrigger className="w-full sm:w-40">
+
+          <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as any)}>
+            <SelectTrigger className="w-full sm:w-44">
               <SelectValue placeholder="Filter by role" />
             </SelectTrigger>
             <SelectContent>
@@ -158,6 +204,7 @@ export function UserRoleManagement() {
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="auditor">Auditor</SelectItem>
               <SelectItem value="client">Client</SelectItem>
+              <SelectItem value="none">None</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -174,31 +221,41 @@ export function UserRoleManagement() {
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
               {filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                  <TableCell
+                    colSpan={5}
+                    className="text-center text-muted-foreground py-8"
+                  >
                     No users found
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredUsers.map(user => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium">{user.full_name}</TableCell>
-                    <TableCell>{user.email}</TableCell>
+                filteredUsers.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="font-medium">
+                      {u.full_name || "—"}
+                    </TableCell>
+                    <TableCell>{u.email || "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={getRoleBadgeVariant(user.role)}>
-                        {user.role}
+                      <Badge variant={getRoleBadgeVariant(u.role)}>
+                        {u.role}
                       </Badge>
                     </TableCell>
-                    <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      {u.created_at
+                        ? new Date(u.created_at).toLocaleDateString()
+                        : "—"}
+                    </TableCell>
                     <TableCell className="text-right">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setSelectedUser(user);
-                          setNewRole(user.role);
+                          setSelectedUser(u);
+                          setNewRole(u.role ?? "none");
                           setShowRoleDialog(true);
                         }}
                       >
@@ -218,14 +275,23 @@ export function UserRoleManagement() {
             <DialogHeader>
               <DialogTitle>Change User Role</DialogTitle>
               <DialogDescription>
-                Update the role for {selectedUser?.full_name}
+                Update the role for {selectedUser?.full_name || selectedUser?.email}
               </DialogDescription>
             </DialogHeader>
+
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Current role: <Badge variant={getRoleBadgeVariant(selectedUser?.role || '')}>{selectedUser?.role}</Badge></p>
+                <p className="text-sm text-muted-foreground">
+                  Current role:{" "}
+                  <Badge
+                    variant={getRoleBadgeVariant(selectedUser?.role || "none")}
+                  >
+                    {selectedUser?.role || "none"}
+                  </Badge>
+                </p>
               </div>
-              <Select value={newRole} onValueChange={setNewRole}>
+
+              <Select value={newRole} onValueChange={(v) => setNewRole(v as Role)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select new role" />
                 </SelectTrigger>
@@ -233,14 +299,16 @@ export function UserRoleManagement() {
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="auditor">Auditor</SelectItem>
                   <SelectItem value="client">Client</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
                 </SelectContent>
               </Select>
-              <Button 
-                onClick={handleRoleChange} 
-                disabled={updating || !newRole || newRole === selectedUser?.role}
+
+              <Button
+                onClick={handleRoleChange}
+                disabled={updating || !selectedUser || newRole === selectedUser.role}
                 className="w-full"
               >
-                {updating ? 'Updating...' : 'Update Role'}
+                {updating ? "Updating..." : "Update Role"}
               </Button>
             </div>
           </DialogContent>

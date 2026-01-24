@@ -1,26 +1,25 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { ArrowLeft, FileText, DollarSign, Clock, CheckCircle } from 'lucide-react';
+import { FileText, DollarSign, Clock, CheckCircle } from 'lucide-react';
+import { DashboardLayout, adminNavItems, auditorNavItems } from '@/components/DashboardLayout';
 
 export default function PaymentsDashboard() {
   const { user, userRole } = useAuth();
-  const navigate = useNavigate();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
+  // loading state kept for internal logic but removed from UI blocking
   const [loading, setLoading] = useState(true);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [selectedAssignment, setSelectedAssignment] = useState<any>(null);
+  const [setShowCreateDialog] = useState(false);
+  const [setSelectedAssignment] = useState<any>(null);
   const [paymentDialog, setPaymentDialog] = useState<{ open: boolean; invoice: any }>({
     open: false,
     invoice: null,
@@ -57,14 +56,12 @@ export default function PaymentsDashboard() {
       if (invoicesError) throw invoicesError;
       setInvoices(invoicesData || []);
 
-      // Calculate stats
       const total = invoicesData?.length || 0;
       const pending = invoicesData?.filter(i => i.payment_status === 'pending').length || 0;
       const paid = invoicesData?.filter(i => i.payment_status === 'paid').length || 0;
       const totalAmount = invoicesData?.reduce((sum, i) => sum + Number(i.net_payable), 0) || 0;
       setStats({ total, pending, paid, totalAmount });
 
-      // Fetch completed assignments without invoices (for auditors)
       if (userRole === 'auditor') {
         const { data: assignmentsData, error: assignmentsError } = await supabase
           .from('assignments')
@@ -74,7 +71,6 @@ export default function PaymentsDashboard() {
 
         if (assignmentsError) throw assignmentsError;
 
-        // Filter out assignments that already have invoices
         const invoiceAssignmentIds = invoicesData?.map(i => i.assignment_id) || [];
         const availableAssignments = assignmentsData?.filter(
           a => !invoiceAssignmentIds.includes(a.id)
@@ -101,7 +97,7 @@ export default function PaymentsDashboard() {
   const handleCreateInvoice = async (assignment: any) => {
     try {
       const totalAmount = parseFloat(assignment.fees) + parseFloat(assignment.ope || 0);
-      const tdsRate = 10; // Default TDS rate
+      const tdsRate = 10;
       const tdsAmount = calculateTDS(totalAmount, tdsRate);
       const netPayable = totalAmount - tdsAmount;
 
@@ -144,7 +140,6 @@ export default function PaymentsDashboard() {
 
       if (error) throw error;
 
-      // Get invoice and auditor details for email
       const { data: invoice } = await supabase
         .from('invoices')
         .select(`
@@ -154,7 +149,6 @@ export default function PaymentsDashboard() {
         .eq('id', invoiceId)
         .single();
 
-      // Send payment notification email
       if (invoice && invoice.auditor) {
         await supabase.functions.invoke('send-payment-notification', {
           body: {
@@ -176,32 +170,11 @@ export default function PaymentsDashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading payments...</p>
-        </div>
-      </div>
-    );
-  }
+  const navItems = userRole === 'admin' ? adminNavItems : auditorNavItems;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <h1 className="text-2xl font-bold text-primary">Payments & Invoices</h1>
-          </div>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8 space-y-8">
-        {/* Stats */}
+    <DashboardLayout title="Payments & Invoices" navItems={navItems} activeTab="payments">
+      <div className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
@@ -241,7 +214,6 @@ export default function PaymentsDashboard() {
           </Card>
         </div>
 
-        {/* Create Invoice (Auditor only) */}
         {userRole === 'auditor' && assignments.length > 0 && (
           <Card>
             <CardHeader>
@@ -269,7 +241,6 @@ export default function PaymentsDashboard() {
           </Card>
         )}
 
-        {/* Invoices Table */}
         <Card>
           <CardHeader>
             <CardTitle>All Invoices</CardTitle>
@@ -333,63 +304,62 @@ export default function PaymentsDashboard() {
             </Table>
           </CardContent>
         </Card>
-      </main>
 
-      {/* Payment Update Dialog */}
-      <Dialog open={paymentDialog.open} onOpenChange={(open) => {
-        setPaymentDialog({ open, invoice: null });
-        setPaymentStatus('');
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update Payment Status</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Invoice: {paymentDialog.invoice?.invoice_number}</Label>
-              <p className="text-sm text-muted-foreground">
-                Amount: ₹{Number(paymentDialog.invoice?.net_payable || 0).toLocaleString('en-IN')}
-              </p>
+        <Dialog open={paymentDialog.open} onOpenChange={(open) => {
+          setPaymentDialog({ open, invoice: null });
+          setPaymentStatus('');
+        }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Update Payment Status</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Invoice: {paymentDialog.invoice?.invoice_number}</Label>
+                <p className="text-sm text-muted-foreground">
+                  Amount: ₹{Number(paymentDialog.invoice?.net_payable || 0).toLocaleString('en-IN')}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="paid">Mark as Paid</SelectItem>
+                    <SelectItem value="rejected">Reject</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button 
+                  className="flex-1" 
+                  onClick={() => {
+                    if (paymentStatus && paymentDialog.invoice?.id) {
+                      handleUpdatePayment(paymentDialog.invoice.id, paymentStatus);
+                    }
+                  }}
+                  disabled={!paymentStatus}
+                >
+                  Submit
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setPaymentDialog({ open: false, invoice: null });
+                    setPaymentStatus('');
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="approved">Approved</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="paid">Mark as Paid</SelectItem>
-                  <SelectItem value="rejected">Reject</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button 
-                className="flex-1" 
-                onClick={() => {
-                  if (paymentStatus && paymentDialog.invoice?.id) {
-                    handleUpdatePayment(paymentDialog.invoice.id, paymentStatus);
-                  }
-                }}
-                disabled={!paymentStatus}
-              >
-                Submit
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setPaymentDialog({ open: false, invoice: null });
-                  setPaymentStatus('');
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </DashboardLayout>
   );
 }

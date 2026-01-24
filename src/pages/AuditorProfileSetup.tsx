@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -7,27 +6,30 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle, GraduationCap, Hash, Building2, Navigation, Plus, X } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { DashboardLayout, auditorNavItems } from '@/components/DashboardLayout';
 
 const INDIAN_STATES = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
-  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
-  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
-  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar',
+  'Chandigarh', 'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa',
+  'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Ladakh', 'Lakshadweep', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya',
+  'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
   'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
 export default function AuditorProfileSetup() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ pan: false, gst: false, resume: false });
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+  
+  const [isEditing, setIsEditing] = useState(false);
   
   const [formData, setFormData] = useState({
     qualifications: [] as string[],
@@ -38,6 +40,7 @@ export default function AuditorProfileSetup() {
     base_city: '',
     base_state: '',
     preferred_states: [] as string[],
+    preferred_cities: [] as string[], 
     willing_to_travel_radius: 50,
   });
 
@@ -68,6 +71,7 @@ export default function AuditorProfileSetup() {
         base_city: data.base_city || '',
         base_state: data.base_state || '',
         preferred_states: data.preferred_states || [],
+        preferred_cities: data.preferred_cities || [],
         willing_to_travel_radius: data.willing_to_travel_radius || 50,
       });
     }
@@ -83,7 +87,9 @@ export default function AuditorProfileSetup() {
 
     const { error: uploadError } = await supabase.storage
       .from('kyc-documents')
-      .upload(fileName, file);
+      .upload(fileName, file, {
+        upsert: true
+      });
 
     setUploading({ ...uploading, [type]: false });
 
@@ -96,21 +102,17 @@ export default function AuditorProfileSetup() {
       return null;
     }
 
-    const { data } = supabase.storage
-      .from('kyc-documents')
-      .getPublicUrl(fileName);
-
-    return data.publicUrl;
+    return fileName;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'pan' | 'gst' | 'resume') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const url = await uploadFile(file, type);
-    if (url) {
+    const path = await uploadFile(file, type);
+    if (path) {
       if (type === 'resume') {
-        setFormData({ ...formData, resume_url: url });
+        setFormData({ ...formData, resume_url: path });
       }
       toast({
         title: 'File uploaded',
@@ -150,12 +152,20 @@ export default function AuditorProfileSetup() {
 
     setSavingDraft(true);
 
+    let finalQualifications = [...formData.qualifications];
+    if (qualificationInput.trim() && !finalQualifications.includes(qualificationInput.trim())) {
+      finalQualifications.push(qualificationInput.trim());
+      setFormData(prev => ({ ...prev, qualifications: finalQualifications }));
+      setQualificationInput('');
+    }
+
     const { error } = await supabase
       .from('auditor_profiles')
       .upsert({
         user_id: user.id,
         ...formData,
-        kyc_status: kycStatus || 'draft',
+        qualifications: finalQualifications,
+        kyc_status: kycStatus === 'approved' || kycStatus === 'pending' ? 'pending' : 'draft', 
       });
 
     setSavingDraft(false);
@@ -171,16 +181,26 @@ export default function AuditorProfileSetup() {
 
     toast({
       title: 'Draft saved',
-      description: 'Your profile has been saved as draft',
+      description: 'Your profile has been saved',
     });
-    setKycStatus('draft');
+    
+    if (kycStatus === 'approved') {
+        setKycStatus('pending');
+        setIsEditing(false);
+    }
   };
 
   const handleSubmitForApproval = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    // Validation
+    let finalQualifications = [...formData.qualifications];
+    if (qualificationInput.trim() && !finalQualifications.includes(qualificationInput.trim())) {
+      finalQualifications.push(qualificationInput.trim());
+      setFormData(prev => ({ ...prev, qualifications: finalQualifications }));
+      setQualificationInput('');
+    }
+
     if (!formData.pan_card || !formData.base_city || !formData.base_state) {
       toast({
         title: 'Incomplete profile',
@@ -197,6 +217,7 @@ export default function AuditorProfileSetup() {
       .upsert({
         user_id: user.id,
         ...formData,
+        qualifications: finalQualifications,
         kyc_status: 'pending',
       });
 
@@ -216,6 +237,7 @@ export default function AuditorProfileSetup() {
       description: 'Your profile has been submitted for admin approval',
     });
     setKycStatus('pending');
+    setIsEditing(false);
   };
 
   const getStatusBadge = () => {
@@ -233,23 +255,11 @@ export default function AuditorProfileSetup() {
     }
   };
 
-  const isEditable = kycStatus !== 'approved' && kycStatus !== 'pending';
+  const isEditable = (kycStatus !== 'approved' && kycStatus !== 'pending') || (kycStatus === 'approved' && isEditing);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Button 
-            variant="ghost" 
-            onClick={() => navigate('/dashboard')} 
-            className="mb-4 gap-2 hover:bg-primary/10"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Button>
-        </div>
-
+    <DashboardLayout title="My Profile" navItems={auditorNavItems} activeTab="my-profile">
+      <div className="max-w-4xl mx-auto py-8">
         <Card className="shadow-xl border-0 bg-card/80 backdrop-blur-sm overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b border-border/50 pb-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -264,16 +274,22 @@ export default function AuditorProfileSetup() {
                       ? 'Fill in your details and upload required documents for KYC verification'
                       : kycStatus === 'pending' 
                         ? 'Your profile is under review. You cannot make changes until it is processed.'
-                        : 'Your profile has been approved.'}
+                        : 'Your profile is approved. Click "Edit Profile" to make changes (requires re-approval).'}
                   </CardDescription>
                 </div>
               </div>
-              {getStatusBadge()}
+              <div className="flex items-center gap-3">
+                {getStatusBadge()}
+                {kycStatus === 'approved' && !isEditing && (
+                    <Button size="sm" variant="outline" onClick={() => setIsEditing(true)} className="gap-2">
+                        <Pencil className="h-3 w-3" /> Edit Profile
+                    </Button>
+                )}
+              </div>
             </div>
           </CardHeader>
           
           <CardContent className="p-6 sm:p-8">
-            {/* Rejection Reason Alert */}
             {kycStatus === 'rejected' && rejectionReason && (
               <Alert variant="destructive" className="mb-8 border-red-500/30 bg-red-500/5">
                 <AlertCircle className="h-5 w-5" />
@@ -284,9 +300,18 @@ export default function AuditorProfileSetup() {
                 </AlertDescription>
               </Alert>
             )}
+
+            {isEditing && kycStatus === 'approved' && (
+              <Alert className="mb-8 bg-amber-500/10 border-amber-500/30 text-amber-800">
+                <AlertCircle className="h-5 w-5 text-amber-600" />
+                <AlertTitle className="font-semibold text-amber-900">Editing Approved Profile</AlertTitle>
+                <AlertDescription className="mt-2 text-amber-800/90">
+                  Modifying your details will reset your status to <strong>Pending</strong>. An admin will need to re-verify your profile before you can apply for assignments again.
+                </AlertDescription>
+              </Alert>
+            )}
             
             <form onSubmit={handleSubmitForApproval} className="space-y-8">
-              {/* Qualifications Section */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50">
                   <GraduationCap className="h-5 w-5 text-primary" />
@@ -326,7 +351,6 @@ export default function AuditorProfileSetup() {
                 </div>
               </div>
 
-              {/* Experience & Documents Section */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50">
                   <Briefcase className="h-5 w-5 text-primary" />
@@ -390,7 +414,6 @@ export default function AuditorProfileSetup() {
                 </div>
               </div>
 
-              {/* Location Section */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50">
                   <MapPin className="h-5 w-5 text-primary" />
@@ -411,7 +434,7 @@ export default function AuditorProfileSetup() {
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Base State <span className="text-destructive">*</span></Label>
                     <select
-                      className="flex h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
                       value={formData.base_state}
                       onChange={(e) => setFormData({ ...formData, base_state: e.target.value })}
                       disabled={!isEditable}
@@ -461,9 +484,20 @@ export default function AuditorProfileSetup() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
               {isEditable && (
                 <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-border/50">
+                  {isEditing && (
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      className="flex-1 h-12 border border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => { setIsEditing(false); loadProfile(); }}
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Cancel Edit
+                    </Button>
+                  )}
+                  
                   <Button 
                     type="button" 
                     variant="outline" 
@@ -491,7 +525,7 @@ export default function AuditorProfileSetup() {
                 </div>
               )}
               
-              {kycStatus === 'approved' && (
+              {kycStatus === 'approved' && !isEditing && (
                 <div className="text-center py-6 bg-green-500/5 rounded-xl border border-green-500/20">
                   <p className="text-green-600 font-medium">✓ Your profile has been approved. You can now apply for assignments.</p>
                 </div>
@@ -500,6 +534,6 @@ export default function AuditorProfileSetup() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

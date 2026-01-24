@@ -3,10 +3,8 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { MapPin, Filter } from 'lucide-react';
+import { Filter } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const INDIAN_STATES = [
@@ -17,11 +15,13 @@ const INDIAN_STATES = [
   'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
-const MapboxAssignmentsMap = () => {
+interface MapboxAssignmentsMapProps {
+  token: string;
+}
+
+const MapboxAssignmentsMap = ({ token }: MapboxAssignmentsMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const [mapboxToken, setMapboxToken] = useState('');
-  const [tokenSet, setTokenSet] = useState(false);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [filteredAssignments, setFilteredAssignments] = useState<any[]>([]);
   const [selectedState, setSelectedState] = useState<string>('all');
@@ -38,13 +38,13 @@ const MapboxAssignmentsMap = () => {
   }, [assignments, selectedState, selectedCity, selectedStatus]);
 
   useEffect(() => {
-    if (tokenSet && mapContainer.current && filteredAssignments.length > 0) {
+    if (token && mapContainer.current && filteredAssignments.length > 0) {
       initializeMap();
     }
-  }, [tokenSet, filteredAssignments]);
+  }, [token, filteredAssignments]);
 
   const fetchAssignments = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('assignments')
       .select('*')
       .not('latitude', 'is', null)
@@ -61,11 +61,9 @@ const MapboxAssignmentsMap = () => {
     if (selectedState !== 'all') {
       filtered = filtered.filter(a => a.state === selectedState);
     }
-
     if (selectedCity !== 'all') {
       filtered = filtered.filter(a => a.city === selectedCity);
     }
-
     if (selectedStatus !== 'all') {
       filtered = filtered.filter(a => a.status === selectedStatus);
     }
@@ -74,18 +72,19 @@ const MapboxAssignmentsMap = () => {
   };
 
   const initializeMap = () => {
-    if (!mapContainer.current || map.current) return;
-
-    mapboxgl.accessToken = mapboxToken;
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/light-v11',
-      center: [78.9629, 20.5937], // Center of India
-      zoom: 4,
-    });
-
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    if (!mapContainer.current) return;
+    
+    // If map already exists, just update markers, don't re-initialize
+    if (!map.current) {
+        mapboxgl.accessToken = token;
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/light-v11',
+          center: [78.9629, 20.5937], // Center of India
+          zoom: 4,
+        });
+        map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+    }
 
     // Clear existing markers
     markers.current.forEach(marker => marker.remove());
@@ -94,7 +93,7 @@ const MapboxAssignmentsMap = () => {
     // Add markers for each assignment
     filteredAssignments.forEach((assignment) => {
       if (assignment.latitude && assignment.longitude) {
-        const statusColors = {
+        const statusColors: Record<string, string> = {
           open: '#3b82f6',
           allotted: '#f59e0b',
           completed: '#22c55e',
@@ -132,51 +131,7 @@ const MapboxAssignmentsMap = () => {
     });
   };
 
-  const handleSetToken = () => {
-    if (mapboxToken.trim()) {
-      setTokenSet(true);
-    }
-  };
-
   const uniqueCities = Array.from(new Set(assignments.map(a => a.city))).sort();
-
-  if (!tokenSet) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MapPin className="h-5 w-5" />
-            Assignments Map Configuration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Mapbox Public Token</Label>
-            <Input
-              type="text"
-              placeholder="pk.eyJ1..."
-              value={mapboxToken}
-              onChange={(e) => setMapboxToken(e.target.value)}
-            />
-            <p className="text-sm text-muted-foreground">
-              Get your free token from{' '}
-              <a
-                href="https://account.mapbox.com/access-tokens/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline"
-              >
-                mapbox.com
-              </a>
-            </p>
-          </div>
-          <Button onClick={handleSetToken} disabled={!mapboxToken.trim()}>
-            Initialize Map
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -192,9 +147,7 @@ const MapboxAssignmentsMap = () => {
             <div className="space-y-2">
               <Label>State</Label>
               <Select value={selectedState} onValueChange={setSelectedState}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All States</SelectItem>
                   {INDIAN_STATES.map(state => (
@@ -206,9 +159,7 @@ const MapboxAssignmentsMap = () => {
             <div className="space-y-2">
               <Label>City</Label>
               <Select value={selectedCity} onValueChange={setSelectedCity}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Cities</SelectItem>
                   {uniqueCities.map(city => (
@@ -220,9 +171,7 @@ const MapboxAssignmentsMap = () => {
             <div className="space-y-2">
               <Label>Status</Label>
               <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="open">Open</SelectItem>
