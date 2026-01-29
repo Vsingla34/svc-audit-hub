@@ -43,6 +43,8 @@ export function useProfileValidation() {
         .eq('user_id', user.id)
         .maybeSingle();
 
+      // Removed Bank Details/PAN fetching since it is no longer mandatory for applying
+
       const missingFields: string[] = [];
 
       // Check main profile fields
@@ -53,7 +55,6 @@ export function useProfileValidation() {
       if (!auditorProfile) {
         missingFields.push('Auditor Profile (not created)');
       } else {
-        if (!auditorProfile.pan_card) missingFields.push('PAN Card');
         if (!auditorProfile.base_city) missingFields.push('Base City');
         if (!auditorProfile.base_state) missingFields.push('Base State');
         if (!auditorProfile.qualifications || auditorProfile.qualifications.length === 0) {
@@ -66,6 +67,8 @@ export function useProfileValidation() {
 
       const isComplete = missingFields.length === 0;
       const kycStatus = auditorProfile?.kyc_status || null;
+      
+      // Allow applying if profile is complete (basic info) and status is approved
       const canApply = isComplete && kycStatus === 'approved';
 
       setProfileStatus({

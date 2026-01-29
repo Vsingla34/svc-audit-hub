@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -6,9 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DashboardLayout, auditorNavItems } from '@/components/DashboardLayout';
 
 const INDIAN_STATES = [
@@ -20,28 +24,46 @@ const INDIAN_STATES = [
   'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
+const COMPETENCIES_LIST = [
+  "Accounting & Bookkeeping", "Financial Reporting & Finalization", "MIS Reporting & Dashboards",
+  "Accounts Payable (AP) Management", "Accounts Receivable (AR) Management", "Bank Reconciliation & Cash Management",
+  "Fixed Assets Accounting & FAR Management", "Inventory Accounting & Valuation", "Costing & Management Accounting",
+  "Budgeting, Forecasting & FP&A", "Virtual CFO / Finance Leadership", "Working Capital & Cashflow Optimization",
+  "Taxation – GST Compliance & Advisory", "Taxation – TDS/TCS Compliance & Advisory", "Direct Tax Compliance & Tax Audit Support",
+  "Bank Audits – Stock, Receivables & DP Assessment", "Concurrent Audit (Banking Operations)", "Statutory Audit Support & Audit Readiness",
+  "Internal Audit, IFC & Risk Management", "SOP Drafting, Process Mapping & Controls Design", "Compliance Management & Regulatory Reporting",
+  "Payroll Processing & Statutory Payroll Compliance (PF/ESI/PT)", "Treasury & Fund Management", "ERP/Accounting Software Implementation & Support",
+  "Data Analytics & Automation (Excel/VBA/Power Query/Power BI)", "Fraud Risk Assessment & Investigations Support", "Due Diligence & Transaction Advisory",
+  "Business Process Improvement & Lean Finance", "Governance, Documentation & Policy Frameworks", "Client Relationship & Engagement Management"
+];
+
 export default function AuditorProfileSetup() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
-  const [uploading, setUploading] = useState({ pan: false, gst: false, resume: false });
+  const [uploading, setUploading] = useState({ gst: false, resume: false, profilePhoto: false });
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
-  
   const [isEditing, setIsEditing] = useState(false);
   
   const [formData, setFormData] = useState({
+    profile_photo_url: '',
     qualifications: [] as string[],
-    pan_card: '',
     gst_number: '',
     resume_url: '',
-    experience_years: null as number | null,
+    experience_years: 0,
+    address: '',
     base_city: '',
     base_state: '',
     preferred_states: [] as string[],
     preferred_cities: [] as string[], 
-    willing_to_travel_radius: null as number | null,
+    willing_to_travel_radius: 50,
+    has_manpower: false,
+    manpower_count: 0,
+    competencies: [] as string[],
+    core_competency: ''
   });
 
   const [qualificationInput, setQualificationInput] = useState('');
@@ -63,79 +85,68 @@ export default function AuditorProfileSetup() {
       setKycStatus(data.kyc_status);
       setRejectionReason(data.rejection_reason);
       setFormData({
+        profile_photo_url: data.profile_photo_url || '',
         qualifications: data.qualifications || [],
-        pan_card: data.pan_card || '',
         gst_number: data.gst_number || '',
         resume_url: data.resume_url || '',
-        experience_years: data.experience_years || null,
+        experience_years: data.experience_years || 0,
+        address: data.address || '',
         base_city: data.base_city || '',
         base_state: data.base_state || '',
         preferred_states: data.preferred_states || [],
         preferred_cities: data.preferred_cities || [],
-        willing_to_travel_radius: data.willing_to_travel_radius || null,
+        willing_to_travel_radius: data.willing_to_travel_radius || 50,
+        has_manpower: data.has_manpower || false,
+        manpower_count: data.manpower_count || 0,
+        competencies: data.competencies || [],
+        core_competency: data.core_competency || ''
       });
     }
   };
 
-  const uploadFile = async (file: File, type: 'pan' | 'gst' | 'resume') => {
+  const uploadFile = async (file: File, type: string) => {
     if (!user) return null;
-
-    setUploading({ ...uploading, [type]: true });
+    const key = type as keyof typeof uploading;
+    setUploading({ ...uploading, [key]: true });
     
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}/${type}_${Date.now()}.${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
       .from('kyc-documents')
-      .upload(fileName, file, {
-        upsert: true
-      });
+      .upload(fileName, file, { upsert: true });
 
-    setUploading({ ...uploading, [type]: false });
+    setUploading({ ...uploading, [key]: false });
 
     if (uploadError) {
-      toast({
-        title: 'Upload failed',
-        description: uploadError.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Upload failed', description: uploadError.message, variant: 'destructive' });
       return null;
     }
-
     return fileName;
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'pan' | 'gst' | 'resume') => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'gst' | 'resume' | 'profilePhoto') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const path = await uploadFile(file, type);
     if (path) {
-      if (type === 'resume') {
-        setFormData({ ...formData, resume_url: path });
-      }
-      toast({
-        title: 'File uploaded',
-        description: 'Document uploaded successfully',
-      });
+      if (type === 'resume') setFormData({ ...formData, resume_url: path });
+      else if (type === 'profilePhoto') setFormData({ ...formData, profile_photo_url: path });
+      
+      toast({ title: 'File uploaded', description: 'Document uploaded successfully' });
     }
   };
 
   const addQualification = () => {
     if (qualificationInput.trim() && !formData.qualifications.includes(qualificationInput.trim())) {
-      setFormData({
-        ...formData,
-        qualifications: [...formData.qualifications, qualificationInput.trim()],
-      });
+      setFormData({ ...formData, qualifications: [...formData.qualifications, qualificationInput.trim()] });
       setQualificationInput('');
     }
   };
 
   const removeQualification = (qual: string) => {
-    setFormData({
-      ...formData,
-      qualifications: formData.qualifications.filter(q => q !== qual),
-    });
+    setFormData({ ...formData, qualifications: formData.qualifications.filter(q => q !== qual) });
   };
 
   const toggleState = (state: string) => {
@@ -147,59 +158,36 @@ export default function AuditorProfileSetup() {
     });
   };
 
-  const handleNumberInput = (value: string, field: 'experience_years' | 'willing_to_travel_radius') => {
-    // Remove leading zeros and convert to number
-    const cleanedValue = value.replace(/^0+/, '');
-    const numValue = cleanedValue === '' ? null : parseInt(cleanedValue, 10);
-    
-    setFormData({
-      ...formData,
-      [field]: numValue,
-    });
+  const handleCompetencyToggle = (comp: string) => {
+    if (formData.competencies.includes(comp)) {
+      setFormData(prev => ({ 
+        ...prev, 
+        competencies: prev.competencies.filter(c => c !== comp),
+        core_competency: prev.core_competency === comp ? '' : prev.core_competency
+      }));
+    } else {
+      if (formData.competencies.length >= 5) {
+        toast({ title: 'Limit Reached', description: 'Maximum 5 competencies allowed.', variant: 'destructive' });
+        return;
+      }
+      setFormData(prev => ({ ...prev, competencies: [...prev.competencies, comp] }));
+    }
   };
 
   const handleSaveDraft = async () => {
     if (!user) return;
-
     setSavingDraft(true);
-
-    let finalQualifications = [...formData.qualifications];
-    if (qualificationInput.trim() && !finalQualifications.includes(qualificationInput.trim())) {
-      finalQualifications.push(qualificationInput.trim());
-      setFormData(prev => ({ ...prev, qualifications: finalQualifications }));
-      setQualificationInput('');
-    }
-
-    const { error } = await supabase
-      .from('auditor_profiles')
-      .upsert({
-        user_id: user.id,
-        ...formData,
-        experience_years: formData.experience_years || 0,
-        willing_to_travel_radius: formData.willing_to_travel_radius || 50,
-        qualifications: finalQualifications,
-        kyc_status: kycStatus === 'approved' || kycStatus === 'pending' ? 'pending' : 'draft', 
-      });
-
-    setSavingDraft(false);
-
-    if (error) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    toast({
-      title: 'Draft saved',
-      description: 'Your profile has been saved',
+    const { error } = await supabase.from('auditor_profiles').upsert({
+      user_id: user.id,
+      ...formData,
+      kyc_status: kycStatus === 'approved' || kycStatus === 'pending' ? 'pending' : 'draft', 
     });
-    
-    if (kycStatus === 'approved') {
-        setKycStatus('pending');
-        setIsEditing(false);
+    setSavingDraft(false);
+    if (error) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Draft saved', description: 'Your profile has been saved' });
+      if (kycStatus === 'approved') { setKycStatus('pending'); setIsEditing(false); }
     }
   };
 
@@ -207,66 +195,38 @@ export default function AuditorProfileSetup() {
     e.preventDefault();
     if (!user) return;
 
-    let finalQualifications = [...formData.qualifications];
-    if (qualificationInput.trim() && !finalQualifications.includes(qualificationInput.trim())) {
-      finalQualifications.push(qualificationInput.trim());
-      setFormData(prev => ({ ...prev, qualifications: finalQualifications }));
-      setQualificationInput('');
+    if (!formData.base_city || !formData.base_state || !formData.address) {
+      toast({ title: 'Incomplete profile', description: 'Fill all required fields (Address, City, State)', variant: 'destructive' });
+      return;
     }
-
-    if (!formData.pan_card || !formData.base_city || !formData.base_state) {
-      toast({
-        title: 'Incomplete profile',
-        description: 'Please fill in all required fields (PAN, Base City, Base State)',
-        variant: 'destructive',
-      });
+    if (formData.competencies.length === 0 || !formData.core_competency) {
+      toast({ title: 'Incomplete competencies', description: 'Select at least 1 competency and a core competency.', variant: 'destructive' });
       return;
     }
 
     setLoading(true);
-
-    const { error } = await supabase
-      .from('auditor_profiles')
-      .upsert({
-        user_id: user.id,
-        ...formData,
-        experience_years: formData.experience_years || 0,
-        willing_to_travel_radius: formData.willing_to_travel_radius || 50,
-        qualifications: finalQualifications,
-        kyc_status: 'pending',
-      });
-
+    const { error } = await supabase.from('auditor_profiles').upsert({
+      user_id: user.id,
+      ...formData,
+      kyc_status: 'pending',
+    });
     setLoading(false);
 
     if (error) {
-      toast({
-        title: 'Error',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Profile submitted', description: 'Submitted for approval' });
+      setKycStatus('pending');
+      setIsEditing(false);
     }
-
-    toast({
-      title: 'Profile submitted',
-      description: 'Your profile has been submitted for admin approval',
-    });
-    setKycStatus('pending');
-    setIsEditing(false);
   };
 
   const getStatusBadge = () => {
     switch (kycStatus) {
-      case 'approved':
-        return <Badge className="bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20">Approved</Badge>;
-      case 'pending':
-        return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 hover:bg-amber-500/20">Pending Approval</Badge>;
-      case 'rejected':
-        return <Badge className="bg-red-500/10 text-red-600 border-red-500/20 hover:bg-red-500/20">Rejected - Please Update</Badge>;
-      case 'draft':
-        return <Badge variant="outline" className="border-muted-foreground/30">Draft</Badge>;
-      default:
-        return <Badge variant="outline" className="border-muted-foreground/30">Not Submitted</Badge>;
+      case 'approved': return <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Approved</Badge>;
+      case 'pending': return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">Pending Approval</Badge>;
+      case 'rejected': return <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Rejected</Badge>;
+      default: return <Badge variant="outline">Draft</Badge>;
     }
   };
 
@@ -284,13 +244,7 @@ export default function AuditorProfileSetup() {
                 </div>
                 <div>
                   <CardTitle className="text-xl font-bold">My Auditor Profile</CardTitle>
-                  <CardDescription className="mt-1">
-                    {isEditable 
-                      ? 'Fill in your details and upload required documents for KYC verification'
-                      : kycStatus === 'pending' 
-                        ? 'Your profile is under review. You cannot make changes until it is processed.'
-                        : 'Your profile is approved. Click "Edit Profile" to make changes (requires re-approval).'}
-                  </CardDescription>
+                  <CardDescription>Manage your professional details</CardDescription>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -306,246 +260,136 @@ export default function AuditorProfileSetup() {
           
           <CardContent className="p-6 sm:p-8">
             {kycStatus === 'rejected' && rejectionReason && (
-              <Alert variant="destructive" className="mb-8 border-red-500/30 bg-red-500/5">
-                <AlertCircle className="h-5 w-5" />
-                <AlertTitle className="font-semibold">Your KYC was rejected</AlertTitle>
-                <AlertDescription className="mt-2">
-                  <strong>Reason:</strong> {rejectionReason}
-                  <p className="mt-2 text-sm opacity-80">Please update your profile and resubmit for approval.</p>
-                </AlertDescription>
-              </Alert>
+              <Alert variant="destructive" className="mb-8"><AlertTitle>KYC Rejected</AlertTitle><AlertDescription>{rejectionReason}</AlertDescription></Alert>
             )}
 
-            {isEditing && kycStatus === 'approved' && (
-              <Alert className="mb-8 bg-amber-500/10 border-amber-500/30 text-amber-800">
-                <AlertCircle className="h-5 w-5 text-amber-600" />
-                <AlertTitle className="font-semibold text-amber-900">Editing Approved Profile</AlertTitle>
-                <AlertDescription className="mt-2 text-amber-800/90">
-                  Modifying your details will reset your status to <strong>Pending</strong>. An admin will need to re-verify your profile before you can apply for assignments again.
-                </AlertDescription>
-              </Alert>
-            )}
-            
             <form onSubmit={handleSubmitForApproval} className="space-y-8">
+              
+              {/* Profile Photo */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-border/50">
-                  <GraduationCap className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold text-lg">Qualifications</h3>
+                 <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Profile Photo (Optional)</h3>
+                 <div className="flex items-center gap-4">
+                    <Input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'profilePhoto')} disabled={!isEditable} className="max-w-xs" />
+                    {formData.profile_photo_url && <span className="text-sm text-green-600">✓ Uploaded</span>}
+                 </div>
+              </div>
+
+              {/* Qualifications */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/50"><GraduationCap className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Qualifications</h3></div>
+                <div className="flex gap-2">
+                  <Input value={qualificationInput} onChange={(e) => setQualificationInput(e.target.value)} placeholder="Add qualification (e.g. CA)" disabled={!isEditable} />
+                  <Button type="button" onClick={addQualification} disabled={!isEditable} size="icon"><Plus className="h-4 w-4" /></Button>
                 </div>
-                <div className="space-y-3">
-                  <Label className="text-sm text-muted-foreground">Add your qualifications (CA/CS/CMA/MBA etc.)</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={qualificationInput}
-                      onChange={(e) => setQualificationInput(e.target.value)}
-                      placeholder="Enter qualification"
-                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addQualification())}
-                      disabled={!isEditable}
-                      className="flex-1"
-                    />
-                    <Button type="button" onClick={addQualification} disabled={!isEditable} size="icon" className="shrink-0">
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                <div className="flex flex-wrap gap-2">
+                  {formData.qualifications.map(q => (
+                    <Badge key={q} variant="secondary" className="cursor-pointer" onClick={() => isEditable && removeQualification(q)}>{q} {isEditable && <X className="h-3 w-3 ml-1" />}</Badge>
+                  ))}
+                </div>
+              </div>
+
+              {/* Experience & Docs */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/50"><Briefcase className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Professional Info</h3></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <Label>Experience (Years)</Label>
+                    <Input type="text" inputMode="numeric" value={formData.experience_years} onChange={e => setFormData({...formData, experience_years: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0})} disabled={!isEditable} required />
                   </div>
-                  <div className="flex flex-wrap gap-2 min-h-[40px]">
-                    {formData.qualifications.map((qual) => (
-                      <Badge
-                        key={qual}
-                        variant="secondary"
-                        className={`px-3 py-1.5 gap-1 ${isEditable ? 'cursor-pointer hover:bg-destructive/10 hover:text-destructive' : ''}`}
-                        onClick={() => isEditable && removeQualification(qual)}
-                      >
-                        {qual}
-                        {isEditable && <X className="h-3 w-3 ml-1" />}
-                      </Badge>
-                    ))}
-                    {formData.qualifications.length === 0 && (
-                      <span className="text-sm text-muted-foreground italic">No qualifications added yet</span>
-                    )}
+                  {/* PAN Card removed as requested */}
+                  <div>
+                    <Label>GST Number</Label>
+                    <Input value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value.toUpperCase()})} disabled={!isEditable} />
+                  </div>
+                  <div>
+                    <Label>Resume (PDF)</Label>
+                    <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable} />
+                    {formData.resume_url && <span className="text-xs text-green-600">✓ Resume Uploaded</span>}
                   </div>
                 </div>
               </div>
 
+              {/* Manpower & Competencies (NEW) */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-border/50">
-                  <Briefcase className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold text-lg">Experience & Documents</h3>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Years of Experience</Label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={formData.experience_years === null ? '' : formData.experience_years}
-                      onChange={(e) => handleNumberInput(e.target.value, 'experience_years')}
-                      placeholder="0"
-                      disabled={!isEditable}
-                      required
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">PAN Card Number <span className="text-destructive">*</span></Label>
-                    <Input
-                      value={formData.pan_card}
-                      onChange={(e) => setFormData({ ...formData, pan_card: e.target.value.toUpperCase() })}
-                      placeholder="ABCDE1234F"
-                      pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"
-                      disabled={!isEditable}
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">GST Number (Optional)</Label>
-                    <Input
-                      value={formData.gst_number}
-                      onChange={(e) => setFormData({ ...formData, gst_number: e.target.value.toUpperCase() })}
-                      placeholder="22AAAAA0000A1Z5"
-                      disabled={!isEditable}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium flex items-center gap-2">
-                      <Upload className="h-4 w-4" />
-                      Resume Upload (PDF)
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        type="file"
-                        accept=".pdf"
-                        onChange={(e) => handleFileUpload(e, 'resume')}
-                        disabled={uploading.resume || !isEditable}
-                        className="cursor-pointer"
-                      />
-                    </div>
-                    {formData.resume_url && (
-                      <p className="text-sm text-green-600 flex items-center gap-1">
-                        <span className="text-lg">✓</span> Resume uploaded successfully
-                      </p>
+                 <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Capabilities</h3>
+                 
+                 <div className="flex items-center gap-4 p-4 border rounded bg-muted/20">
+                    <Label>Manpower Availability?</Label>
+                    <Switch checked={formData.has_manpower} onCheckedChange={c => isEditable && setFormData({...formData, has_manpower: c})} disabled={!isEditable} />
+                    {formData.has_manpower && (
+                      <Input type="number" min="1" className="w-24 ml-4" placeholder="Count" value={formData.manpower_count} onChange={e => setFormData({...formData, manpower_count: parseInt(e.target.value) || 0})} disabled={!isEditable} />
                     )}
-                  </div>
-                </div>
-              </div>
+                 </div>
 
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-border/50">
-                  <MapPin className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold text-lg">Location & Preferences</h3>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Base City <span className="text-destructive">*</span></Label>
-                    <Input
-                      value={formData.base_city}
-                      onChange={(e) => setFormData({ ...formData, base_city: e.target.value })}
-                      placeholder="Mumbai"
-                      disabled={!isEditable}
-                      required
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Base State <span className="text-destructive">*</span></Label>
-                    <select
-                      className="flex h-11 w-full rounded-xl border border-input bg-background px-4 py-2 text-sm"
-                      value={formData.base_state}
-                      onChange={(e) => setFormData({ ...formData, base_state: e.target.value })}
-                      disabled={!isEditable}
-                      required
-                    >
-                      <option value="">Select State</option>
-                      {INDIAN_STATES.map((state) => (
-                        <option key={state} value={state}>{state}</option>
+                 <div>
+                    <Label className="mb-2 block">Competencies (Max 5)</Label>
+                    <div className="h-48 overflow-y-auto border rounded p-4 grid grid-cols-1 md:grid-cols-2 gap-2 bg-muted/10">
+                      {COMPETENCIES_LIST.map(comp => (
+                        <div key={comp} className="flex items-center gap-2">
+                          <Checkbox id={comp} checked={formData.competencies.includes(comp)} onCheckedChange={() => isEditable && handleCompetencyToggle(comp)} disabled={!isEditable} />
+                          <label htmlFor={comp} className="text-sm cursor-pointer">{comp}</label>
+                        </div>
                       ))}
+                    </div>
+                 </div>
+
+                 {formData.competencies.length > 0 && (
+                   <div>
+                     <Label>Core Competency *</Label>
+                     <Select value={formData.core_competency || ''} onValueChange={v => setFormData({...formData, core_competency: v})} disabled={!isEditable}>
+                       <SelectTrigger><SelectValue placeholder="Select primary skill" /></SelectTrigger>
+                       <SelectContent>{formData.competencies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                     </Select>
+                   </div>
+                 )}
+              </div>
+
+              {/* Location */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/50"><MapPin className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Location</h3></div>
+                
+                <div className="space-y-2">
+                  <Label>Full Address *</Label>
+                  <Input value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Full street address" disabled={!isEditable} required />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <Label>Base City *</Label>
+                    <Input value={formData.base_city} onChange={e => setFormData({...formData, base_city: e.target.value})} disabled={!isEditable} required />
+                  </div>
+                  <div>
+                    <Label>Base State *</Label>
+                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formData.base_state} onChange={e => setFormData({...formData, base_state: e.target.value})} disabled={!isEditable} required>
+                      <option value="">Select State</option>
+                      {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Navigation className="h-4 w-4" />
-                    Willing to Travel (km radius)
-                  </Label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={formData.willing_to_travel_radius === null ? '' : formData.willing_to_travel_radius}
-                    onChange={(e) => handleNumberInput(e.target.value, 'willing_to_travel_radius')}
-                    placeholder="50"
-                    disabled={!isEditable}
-                    className="max-w-xs"
-                    required
-                  />
+                
+                <div>
+                  <Label>Willing to Travel (km radius)</Label>
+                  <Input type="text" inputMode="numeric" className="max-w-xs" value={formData.willing_to_travel_radius} onChange={e => setFormData({...formData, willing_to_travel_radius: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0})} disabled={!isEditable} required />
                 </div>
 
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium">Preferred States for Work</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 max-h-64 overflow-y-auto p-4 border rounded-xl bg-muted/30">
-                    {INDIAN_STATES.map((state) => (
-                      <label key={state} className={`flex items-center gap-2 p-2.5 rounded-lg transition-colors ${isEditable ? 'cursor-pointer hover:bg-primary/5' : 'opacity-60'} ${formData.preferred_states.includes(state) ? 'bg-primary/10 border border-primary/20' : 'bg-background border border-transparent'}`}>
-                        <input
-                          type="checkbox"
-                          checked={formData.preferred_states.includes(state)}
-                          onChange={() => isEditable && toggleState(state)}
-                          disabled={!isEditable}
-                          className="accent-primary h-4 w-4 rounded"
-                        />
-                        <span className="text-sm">{state}</span>
-                      </label>
+                <div className="space-y-2">
+                  <Label>Preferred States</Label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 h-40 overflow-y-auto border rounded p-2">
+                    {INDIAN_STATES.map(state => (
+                      <div key={state} className="flex items-center gap-2">
+                        <Checkbox checked={formData.preferred_states.includes(state)} onCheckedChange={() => isEditable && toggleState(state)} disabled={!isEditable} />
+                        <span className="text-xs">{state}</span>
+                      </div>
                     ))}
                   </div>
                 </div>
               </div>
 
               {isEditable && (
-                <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-border/50">
-                  {isEditing && (
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      className="flex-1 h-12 border border-destructive/20 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => { setIsEditing(false); loadProfile(); }}
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Cancel Edit
-                    </Button>
-                  )}
-                  
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    className="flex-1 h-12"
-                    onClick={handleSaveDraft}
-                    disabled={savingDraft || loading || Object.values(uploading).some(v => v)}
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {savingDraft ? 'Saving...' : 'Save as Draft'}
-                  </Button>
-                  <Button 
-                    type="submit" 
-                    className="flex-1 h-12"
-                    disabled={loading || savingDraft || Object.values(uploading).some(v => v)}
-                  >
-                    <Send className="h-4 w-4 mr-2" />
-                    {loading ? 'Submitting...' : 'Submit for Approval'}
-                  </Button>
-                </div>
-              )}
-
-              {kycStatus === 'pending' && (
-                <div className="text-center py-6 bg-amber-500/5 rounded-xl border border-amber-500/20">
-                  <p className="text-muted-foreground">Your profile is under review. You will be notified once it is approved.</p>
-                </div>
-              )}
-              
-              {kycStatus === 'approved' && !isEditing && (
-                <div className="text-center py-6 bg-green-500/5 rounded-xl border border-green-500/20">
-                  <p className="text-green-600 font-medium">✓ Your profile has been approved. You can now apply for assignments.</p>
+                <div className="flex gap-4 pt-4">
+                  {isEditing && <Button type="button" variant="ghost" className="flex-1" onClick={() => {setIsEditing(false); loadProfile();}}>Cancel</Button>}
+                  <Button type="button" variant="outline" className="flex-1" onClick={handleSaveDraft} disabled={savingDraft || loading}>Save Draft</Button>
+                  <Button type="submit" className="flex-1" disabled={loading}>Submit</Button>
                 </div>
               )}
             </form>

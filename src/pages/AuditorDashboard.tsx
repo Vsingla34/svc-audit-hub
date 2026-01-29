@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Briefcase, Clock, CheckCircle, AlertCircle, IndianRupee, MapPin } from 'lucide-react';
+import { Briefcase, Clock, CheckCircle, AlertCircle, IndianRupee, MapPin, Eye, Building2, GraduationCap, Calendar, ArrowRight } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -28,7 +28,6 @@ export default function AuditorDashboard() {
   const [openAssignments, setOpenAssignments] = useState<any[]>([]);
   const [myApplications, setMyApplications] = useState<any[]>([]);
   const [myAssignments, setMyAssignments] = useState<any[]>([]);
-  // loading kept for state, but removed from UI return
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   
@@ -79,7 +78,7 @@ export default function AuditorDashboard() {
 
       const { data: openData } = await supabase
         .from('assignments')
-        .select('id, state, city, pincode, audit_type, audit_date, deadline_date, status, fees, client_name, branch_name, applicant_count')
+        .select('*')
         .eq('status', 'open')
         .order('audit_date', { ascending: true });
 
@@ -89,8 +88,7 @@ export default function AuditorDashboard() {
         relevantJobs = relevantJobs.filter(job => {
           const isBaseMatch = job.state === profile.base_state;
           const isPreferredMatch = profile.preferred_states?.includes(job.state);
-          const isBelowLimit = (job.applicant_count || 0) < 5;
-          return (isBaseMatch || isPreferredMatch) && isBelowLimit;
+          return (isBaseMatch || isPreferredMatch); 
         });
       }
 
@@ -284,53 +282,139 @@ export default function AuditorDashboard() {
           {filteredOpenAssignments.length === 0 ? (
             <Card><CardContent className="py-8 text-center text-muted-foreground">No open assignments available in your area matching criteria.</CardContent></Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredOpenAssignments.map(a => {
-                const hasApplied = myApplications.some(app => app.assignment_id === a.id);
-                const applicantCount = a.applicant_count || 0;
-                
-                return (
-                  <Card key={a.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg">{a.audit_type}</CardTitle>
-                          <CardDescription className="flex items-center gap-1 mt-1"><MapPin className="h-3 w-3" /> {a.city}, {a.state}</CardDescription>
-                          <div className="text-xs text-muted-foreground mt-1">{a.client_name}</div>
-                        </div>
-                        <span className="text-xs text-muted-foreground">#{a.id?.substring(0, 8)}</span>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="text-sm space-y-1">
-                        <div>Audit Date: {a.audit_date ? format(new Date(a.audit_date), 'dd MMM yyyy') : 'N/A'}</div>
-                        <div className="flex justify-between items-center mt-2">
-                          <div className="flex items-center gap-1 font-semibold text-primary"><IndianRupee className="h-4 w-4" /><span>{a.fees?.toLocaleString('en-IN')}</span></div>
-                          <Badge variant={applicantCount >= 4 ? "destructive" : "secondary"} className="text-xs">{applicantCount}/5 Applicants</Badge>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {filteredOpenAssignments.map(a => (
+                <Card key={a.id} className="flex flex-col hover:shadow-lg transition-shadow border-l-4 border-l-primary h-full">
+                  <CardHeader className="pb-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg font-bold text-primary flex items-center gap-2">
+                          #{a.assignment_number || a.id.substring(0, 6).toUpperCase()}
+                        </CardTitle>
+                        <div className="text-sm text-muted-foreground mt-1 font-medium">
+                          {a.audit_type}
                         </div>
                       </div>
-                      {!hasApplied ? (
-                        <Button className="w-full mt-2" onClick={() => handleApplyClick(a.id)} disabled={!canApply}>{canApply ? 'Apply Now' : 'Complete Profile'}</Button>
-                      ) : (
-                        <div className="text-center text-sm py-2 bg-muted rounded mt-2">Applied</div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                      <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20">
+                        <IndianRupee className="h-3 w-3 mr-1" />
+                        {a.fees?.toLocaleString()}/day
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  
+                  <CardContent className="space-y-4 flex-1">
+                    <div className="grid grid-cols-2 gap-y-3 text-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                        <Building2 className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{a.industry || 'General Industry'}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                        <MapPin className="h-4 w-4 shrink-0" />
+                        <span>{a.city}, {a.state}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                        <GraduationCap className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{a.qualification_required || 'Any Qualified'}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                        <Clock className="h-4 w-4 shrink-0" />
+                        <span>{a.duration || 'Flexible'}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  <div className="p-6 pt-0 mt-auto">
+                    <Button 
+                      className="w-full" 
+                      onClick={() => navigate(`/assignment/${a.id}`)}
+                    >
+                      <Eye className="h-4 w-4 mr-2" />
+                      See More Details
+                    </Button>
+                  </div>
+                </Card>
+              ))}
             </div>
           )}
         </div>
       )}
 
       {activeTab === 'my-applications' && (
-        <div className="space-y-4">
-          {myApplications.length === 0 ? <Card><CardContent className="py-8 text-center text-muted-foreground">No applications yet</CardContent></Card> : (
-            <div className="grid gap-4">
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold tracking-tight">Your Applications</h2>
+            <Badge variant="outline">{myApplications.length} Total</Badge>
+          </div>
+
+          {myApplications.length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">You haven't applied to any assignments yet.</CardContent></Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {myApplications.map(app => (
-                <Card key={app.id}>
-                  <CardHeader><div className="flex justify-between items-start"><div><CardTitle className="text-lg">{app.assignment?.client_name}</CardTitle><CardDescription>{app.assignment?.city}, {app.assignment?.state}</CardDescription></div><StatusBadge status={app.status} /></div></CardHeader>
-                  <CardContent><div className="flex justify-between items-center"><div className="text-sm text-muted-foreground">Applied: {format(new Date(app.applied_at), 'dd MMM yyyy')}</div>{app.status === 'pending' && <Button size="sm" variant="destructive" onClick={() => handleDeleteApplication(app.id)}>Withdraw</Button>}</div></CardContent>
+                <Card key={app.id} className="hover:shadow-md transition-shadow border-l-4 border-l-primary group flex flex-col">
+                  <CardHeader className="pb-3 bg-muted/5">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="flex items-center gap-2">
+                           <CardTitle className="text-lg font-bold text-primary">{app.assignment?.client_name}</CardTitle>
+                        </div>
+                        <div className="text-sm font-medium text-muted-foreground mt-1">{app.assignment?.branch_name}</div>
+                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 font-mono">
+                           #{app.assignment?.assignment_number || 'NA'}
+                        </div>
+                      </div>
+                      <StatusBadge status={app.status} />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="py-4 flex-1">
+                     <div className="grid grid-cols-2 gap-y-3 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                           <MapPin className="h-4 w-4 text-primary/70" /> 
+                           {app.assignment?.city}, {app.assignment?.state}
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                           <Calendar className="h-4 w-4 text-primary/70" /> 
+                           Start: {app.assignment?.audit_date ? format(new Date(app.assignment.audit_date), 'dd MMM yyyy') : 'TBD'}
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                           <Briefcase className="h-4 w-4 text-primary/70" /> 
+                           {app.assignment?.audit_type}
+                        </div>
+                        <div className="flex items-center gap-2 font-medium text-green-700 bg-green-50 px-2 py-1 rounded w-fit col-span-2">
+                           <IndianRupee className="h-3 w-3" /> 
+                           {app.assignment?.fees?.toLocaleString()} / day
+                        </div>
+                     </div>
+                  </CardContent>
+                  <CardFooter className="pt-3 border-t bg-muted/10 flex justify-between items-center mt-auto">
+                     <div className="text-xs text-muted-foreground flex flex-col">
+                        <span>Applied on</span>
+                        <span className="font-medium">{format(new Date(app.applied_at), 'dd MMM yyyy')}</span>
+                     </div>
+                     <div className="flex gap-2">
+                        {app.status === 'pending' && (
+                           <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 px-2" 
+                              onClick={(e) => { e.stopPropagation(); handleDeleteApplication(app.id); }}
+                           >
+                              Withdraw
+                           </Button>
+                        )}
+                        <Button 
+                           size="sm" 
+                           variant="outline" 
+                           className="h-8 gap-1 border-primary/20 hover:border-primary/50 text-primary" 
+                           onClick={() => navigate(`/assignment/${app.assignment_id}`)}
+                        >
+                           View Details <ArrowRight className="h-3 w-3" />
+                        </Button>
+                     </div>
+                  </CardFooter>
                 </Card>
               ))}
             </div>

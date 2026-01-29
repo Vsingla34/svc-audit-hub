@@ -5,13 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Plus, Star, Download, Eye, MapPin, Phone, Mail, MessageSquare } from 'lucide-react';
+import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
+import { CreateAssignmentDialog } from '@/components/CreateAssignmentDialog';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AssignmentSearchExport } from '@/components/AssignmentSearchExport';
@@ -34,12 +34,10 @@ export default function AdminDashboard() {
   const [applications, setApplications] = useState<any[]>([]);
   const [pendingKyc, setPendingKyc] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, open: 0, allotted: 0, completed: 0 });
-  // loading kept for state, but removed from UI return
   const [loading, setLoading] = useState(true);
   
   const [auditorDetails, setAuditorDetails] = useState<Record<string, { rating: number, experience: number }>>({});
 
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
   const [kycDetailOpen, setKycDetailOpen] = useState(false);
   const [appDetailOpen, setAppDetailOpen] = useState(false);
@@ -56,12 +54,6 @@ export default function AdminDashboard() {
   
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
-  const [bulkStatus, setBulkStatus] = useState<string>('');
-
-  const [formData, setFormData] = useState({
-    client_name: '', branch_name: '', address: '', city: '', state: '',
-    pincode: '', audit_type: 'Stock Audit', audit_date: '', deadline_date: '', fees: '', ope: '',
-  });
 
   useEffect(() => { fetchData(); }, []);
 
@@ -205,7 +197,6 @@ export default function AdminDashboard() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  const handleCreateAssignment = async (e: React.FormEvent) => { e.preventDefault(); try { await supabase.from('assignments').insert({ ...formData, fees: parseFloat(formData.fees), ope: parseFloat(formData.ope) || 0, created_by: user?.id }); toast.success('Created!'); setShowCreateDialog(false); fetchData(); } catch (err: any) { toast.error(err.message); } };
   const handleKycApproval = async (uid: string, status: string, reason?: string) => { try { await supabase.from('auditor_profiles').update({ kyc_status: status, rejection_reason: reason || null }).eq('user_id', uid); toast.success(`KYC ${status}`); setKycDetailOpen(false); setRejectionDialogOpen(false); fetchData(); } catch (err: any) { toast.error(err.message); } };
   const handleDownloadResume = async (path: string) => { if(!path) return; try { const {data} = await supabase.storage.from('kyc-documents').createSignedUrl(path.startsWith('http') ? path.split('kyc-documents/')[1] : path, 3600); if(data?.signedUrl) window.open(data.signedUrl); } catch(e:any) { toast.error(e.message); } };
   const handleDeleteAssignment = async (id: string) => { if(confirm('Delete?')) { await supabase.from('assignments').delete().eq('id', id); fetchData(); } };
@@ -239,41 +230,7 @@ export default function AdminDashboard() {
       {activeTab === 'assignments' && (
         <div className="space-y-4">
           <div className="flex gap-2">
-            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-              <Button onClick={() => setShowCreateDialog(true)}><Plus className="mr-2 h-4 w-4" /> Create Assignment</Button>
-              <DialogContent className="max-h-[90vh] overflow-y-auto">
-                <DialogHeader><DialogTitle>New Assignment</DialogTitle></DialogHeader>
-                <form onSubmit={handleCreateAssignment} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input placeholder="Client Name" value={formData.client_name} onChange={e => setFormData({...formData, client_name: e.target.value})} required />
-                    <Input placeholder="Branch" value={formData.branch_name} onChange={e => setFormData({...formData, branch_name: e.target.value})} required />
-                  </div>
-                  <Input placeholder="Address" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} required />
-                  <div className="grid grid-cols-3 gap-2">
-                    <Input placeholder="City" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} required />
-                    <Input placeholder="State" value={formData.state} onChange={e => setFormData({...formData, state: e.target.value})} required />
-                    <Input placeholder="Pincode" value={formData.pincode} onChange={e => setFormData({...formData, pincode: e.target.value})} required />
-                  </div>
-                  <Select value={formData.audit_type} onValueChange={(v) => setFormData({ ...formData, audit_type: v })}>
-                      <SelectTrigger><SelectValue placeholder="Audit Type" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Stock Audit">Stock Audit</SelectItem>
-                        <SelectItem value="Concurrent Audit">Concurrent Audit</SelectItem>
-                        <SelectItem value="Credit Audit">Credit Audit</SelectItem>
-                      </SelectContent>
-                  </Select>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input type="date" value={formData.audit_date} onChange={e => setFormData({...formData, audit_date: e.target.value})} required />
-                    <Input type="date" value={formData.deadline_date} onChange={e => setFormData({...formData, deadline_date: e.target.value})} required />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input placeholder="Fees" type="number" value={formData.fees} onChange={e => setFormData({...formData, fees: e.target.value})} required />
-                    <Input placeholder="OPE" type="number" value={formData.ope} onChange={e => setFormData({...formData, ope: e.target.value})} />
-                  </div>
-                  <Button type="submit" className="w-full">Create</Button>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <CreateAssignmentDialog onAssignmentCreated={fetchData} />
             <BulkUploadDialog userId={user?.id || ''} onSuccess={fetchData} />
           </div>
           

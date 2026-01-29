@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/integrations/supabase/client';
 import { NotificationBell } from '@/components/NotificationBell';
 import {
   Sidebar,
@@ -14,6 +16,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   LayoutDashboard,
   Briefcase,
@@ -29,7 +32,7 @@ import {
   Clock,
   Menu,
   ChevronRight,
-  UserCog,
+  Landmark,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -57,25 +60,96 @@ function AppSidebar({
   activeTab?: string; 
   onTabChange?: (tab: string) => void;
 }) {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
+  
+  const [fullName, setFullName] = useState<string>('User');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      getProfile();
+    }
+  }, [user]);
+
+  const getProfile = async () => {
+    if (!user) return;
+    try {
+      // 1. Fetch Name from 'profiles' table
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single();
+
+      if (profileData?.full_name) {
+        setFullName(profileData.full_name);
+      }
+
+      
+      const { data: auditorData } = await supabase
+        .from('auditor_profiles')
+        .select('profile_photo_url')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (auditorData?.profile_photo_url) {
+        const path = auditorData.profile_photo_url;
+        
+        // If it's already a full URL (e.g. from Google Auth or external), use it
+        if (path.startsWith('http') || path.startsWith('https')) {
+          setAvatarUrl(path);
+        } else {
+          // Otherwise, generate a signed URL from the 'kyc-documents' bucket
+          // We use signed URL because 'kyc-documents' is a private bucket
+          const { data: signedData } = await supabase.storage
+            .from('kyc-documents')
+            .createSignedUrl(path, 3600 * 24); // Valid for 24 hours
+
+          if (signedData?.signedUrl) {
+            setAvatarUrl(signedData.signedUrl);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    }
+  };
+
+  const getInitials = (name: string) => {
+    return name
+      ?.split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2) || 'U';
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-r-0 bg-sidebar">
       <SidebarContent className="pt-6 px-3">
+        {/* User Header */}
         <div className={cn(
-          "flex items-center gap-3 px-3 mb-8",
-          collapsed && "justify-center"
+          "flex items-center gap-3 px-2 mb-8 transition-all duration-300",
+          collapsed ? "justify-center" : "justify-start"
         )}>
-          <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center">
-            <Shield className="h-5 w-5 text-sidebar-primary-foreground" />
-          </div>
+          <Avatar className="h-10 w-10 border-2 border-sidebar-primary/20">
+            <AvatarImage src={avatarUrl || ''} alt={fullName} className="object-cover" />
+            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
+              {getInitials(fullName)}
+            </AvatarFallback>
+          </Avatar>
+          
           {!collapsed && (
-            <div>
-              <h1 className="font-heading text-base font-semibold text-sidebar-foreground">AuditHub</h1>
-              <p className="text-xs text-sidebar-foreground/60">Management Portal</p>
+            <div className="flex flex-col overflow-hidden">
+              <span className="font-heading text-sm font-semibold text-sidebar-foreground truncate">
+                {fullName}
+              </span>
+              <span className="text-xs text-sidebar-foreground/60 truncate" title={user?.email}>
+                {user?.email}
+              </span>
             </div>
           )}
         </div>
@@ -190,7 +264,6 @@ export function DashboardLayout({
   );
 }
 
-// Updated NavItems with explicit hrefs for routing
 export const adminNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
   { title: 'Assignments', icon: Briefcase, href: '/dashboard?tab=assignments' },
@@ -207,6 +280,7 @@ export const adminNavItems: NavItem[] = [
 export const auditorNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
+  { title: 'Bank & KYC', icon: Landmark, href: '/bank-kyc' },
   { title: 'Available Jobs', icon: Briefcase, href: '/dashboard?tab=available-jobs' },
   { title: 'My Applications', icon: Clock, href: '/dashboard?tab=my-applications' },
   { title: 'My Assignments', icon: FileCheck, href: '/dashboard?tab=my-assignments' },
