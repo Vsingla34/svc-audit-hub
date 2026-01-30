@@ -7,12 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
-  ArrowLeft, MapPin, Calendar, Clock, Building2, Info, Laptop, 
-  IndianRupee, CheckCircle2, FileText, Upload, FileCheck, Star, ExternalLink, Navigation 
+  ArrowLeft, MapPin, Calendar, Clock, Info, Laptop, 
+  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation 
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { DashboardLayout, auditorNavItems, adminNavItems } from '@/components/DashboardLayout';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -23,9 +23,17 @@ export default function AssignmentDetail() {
   const navigate = useNavigate();
   const { user, userRole } = useAuth();
   const { toast } = useToast();
+  
   const [assignment, setAssignment] = useState<any>(null);
+  const [loading, setLoading] = useState(true); // Added loading state
   const [hasApplied, setHasApplied] = useState(false);
-  const [applying, setApplying] = useState(false);
+  
+  // Application Dialog State
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [interestReason, setInterestReason] = useState('');
+  const [submittingApp, setSubmittingApp] = useState(false);
+
+  // Report Submission State
   const [reportSignedUrl, setReportSignedUrl] = useState<string | null>(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [uploadingReport, setUploadingReport] = useState(false);
@@ -34,73 +42,129 @@ export default function AssignmentDetail() {
   const [completionRemarks, setCompletionRemarks] = useState('');
   const [selectedReportFile, setSelectedReportFile] = useState<File | null>(null);
 
-  const { isComplete: profileComplete, missingFields, canApply } = useProfileValidation();
+  const { isComplete: profileComplete, missingFields } = useProfileValidation();
 
   useEffect(() => {
-    if (id) fetchAssignmentDetails();
+    if (id) {
+      fetchAssignmentDetails();
+    }
   }, [id, user]);
 
   const fetchAssignmentDetails = async () => {
-    // 1. Fetch Assignment
-    const { data: job, error } = await supabase
-      .from('assignments')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error) {
-      toast({ title: 'Error', description: 'Could not load assignment details', variant: 'destructive' });
-      navigate('/dashboard');
-      return;
-    }
-    setAssignment(job);
-
-    // 2. Check if already applied (for auditors)
-    if (user && userRole === 'auditor') {
-      const { data: application } = await supabase
-        .from('applications')
-        .select('id')
-        .eq('assignment_id', id)
-        .eq('auditor_id', user.id)
-        .maybeSingle();
+    try {
+      setLoading(true);
+      // 1. Fetch Assignment
+      const { data: job, error } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('id', id)
+        .single();
       
-      if (application) setHasApplied(true);
-    }
+      if (error) throw error;
+      setAssignment(job);
 
-    // 3. Get Signed URL for report if exists
-    if (job.report_url && !job.report_url.startsWith('http')) {
-        const { data, error } = await supabase.storage
-          .from('kyc-documents')
-          .createSignedUrl(job.report_url, 3600);
-        if (!error && data) {
-          setReportSignedUrl(data.signedUrl);
-        }
+      // 2. Check if already applied (for auditors)
+      if (user && userRole === 'auditor') {
+        const { data: application } = await supabase
+          .from('applications')
+          .select('id')
+          .eq('assignment_id', id)
+          .eq('auditor_id', user.id)
+          .maybeSingle();
+        
+        if (application) setHasApplied(true);
+      }
+
+      // 3. Get Signed URL for report if exists
+      if (job.report_url && !job.report_url.startsWith('http')) {
+          const { data, error: signError } = await supabase.storage
+            .from('kyc-documents')
+            .createSignedUrl(job.report_url, 3600);
+          if (!signError && data) {
+            setReportSignedUrl(data.signedUrl);
+          }
+      }
+    } catch (error: any) {
+      console.error('Error fetching assignment:', error);
+      toast({ title: 'Error', description: 'Could not load assignment details', variant: 'destructive' });
+      navigate('/dashboard'); // Redirect on error
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleApply = async () => {
+  // 1. Triggered when clicking "Apply Now" - Opens Dialog
+  const handleApplyClick = () => {
     if (!user) return;
+    
+    // Validate Profile
     if (!profileComplete) {
-      toast({ title: 'Incomplete Profile', description: `Please complete your profile first. Missing: ${missingFields.join(', ')}`, variant: 'destructive' });
+      toast({ 
+        title: 'Incomplete Profile', 
+        description: `Please complete your profile first. Missing: ${missingFields.join(', ')}`, 
+        variant: 'destructive' 
+      });
       return;
     }
 
-    setApplying(true);
-    const { error } = await supabase
-      .from('applications')
-      .insert({
+    // Reset and Open Dialog
+    setInterestReason('');
+    setApplyDialogOpen(true);
+  };
+
+  // 2. Triggered when clicking "Submit Application" inside the dialog
+  const submitApplication = async () => {
+    if (!user || !id) return;
+
+    // VALIDATION: Must provide a reason
+    if (!interestReason.trim()) {
+      toast({ 
+        title: "Reason Required", 
+        description: "Please explain why you are interested in this assignment.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setSubmittingApp(true);
+    try {
+      // Check application limit
+      const { data: job } = await supabase.from('assignments').select('applicant_count').eq('id', id).single();
+      if (job && job.applicant_count >= 5) {
+         toast({ title: "Limit Reached", description: "Maximum application limit (5) reached just now.", variant: "destructive" });
+         setApplyDialogOpen(false);
+         fetchAssignmentDetails();
+         return;
+      }
+
+      const { error } = await supabase
+        .from('applications')
+        .insert({
+          assignment_id: id,
+          auditor_id: user.id,
+          interest_reason: interestReason, // Save the reason
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
+      // Log activity
+      await supabase.from('assignment_activities').insert({
         assignment_id: id,
-        auditor_id: user.id,
-        status: 'pending'
+        user_id: user.id,
+        activity_type: 'application_received',
+        description: 'New application received',
       });
 
-    if (error) {
-      toast({ title: "Application Failed", description: error.message, variant: "destructive" });
-    } else {
       toast({ title: "Applied Successfully", description: "The client will be notified." });
       setHasApplied(true);
+      setApplyDialogOpen(false); // Close dialog on success
+
+    } catch (error: any) {
+      toast({ title: "Application Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setSubmittingApp(false);
     }
-    setApplying(false);
   };
 
   const handleReportSubmit = async () => {
@@ -153,9 +217,19 @@ export default function AssignmentDetail() {
     }
   };
 
-  if (!assignment) return <div className="p-8 text-center">Loading details...</div>;
-
   const navItems = userRole === 'admin' ? adminNavItems : auditorNavItems;
+
+  if (loading) {
+    return (
+      <DashboardLayout title="Assignment Details" navItems={navItems}>
+         <div className="flex h-[50vh] items-center justify-center">
+            <p className="text-muted-foreground animate-pulse">Loading assignment details...</p>
+         </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!assignment) return null; // Should have redirected
 
   return (
     <DashboardLayout title="Assignment Details" navItems={navItems}>
@@ -164,8 +238,8 @@ export default function AssignmentDetail() {
           <ArrowLeft className="h-4 w-4" /> Back to Jobs
         </Button>
 
-        {/* Header Card */}
-        <Card className="border-t-4 border-t-primary shadow-md">
+        {/* --- MAIN DETAILS CARD (THE "DETAIL BOX") --- */}
+        <Card className="border-t-4 border-t-primary shadow-md bg-card">
           <CardHeader className="pb-4 border-b">
             <div className="flex flex-col md:flex-row justify-between gap-4">
               <div>
@@ -196,7 +270,7 @@ export default function AssignmentDetail() {
                 <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                   <Info className="h-5 w-5 text-primary" /> Scope & Requirements
                 </h3>
-                <div className="bg-muted/30 p-4 rounded-lg space-y-3">
+                <div className="bg-muted/30 p-4 rounded-lg space-y-3 border">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <span className="text-sm text-muted-foreground">Qualification Required</span>
@@ -287,8 +361,9 @@ export default function AssignmentDetail() {
                           <CheckCircle2 className="h-4 w-4 mr-2" /> Applied
                         </Button>
                       ) : (
-                        <Button className="w-full" size="lg" onClick={handleApply} disabled={applying}>
-                          {applying ? 'Applying...' : 'Apply Now'}
+                        // THIS BUTTON TRIGGERS THE REASON DIALOG
+                        <Button className="w-full" size="lg" onClick={handleApplyClick} disabled={submittingApp}>
+                          {submittingApp ? 'Processing...' : 'Apply Now'}
                         </Button>
                       )
                     ) : (
@@ -317,7 +392,39 @@ export default function AssignmentDetail() {
         </Card>
       </div>
 
-      {/* Report Submission Dialog */}
+      {/* --- REASON FOR INTEREST DIALOG --- */}
+      <Dialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Apply for Assignment</DialogTitle>
+            <DialogDescription>
+              To help us select the best auditor, please tell us why you are a good fit.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+             <div className="space-y-2">
+               <Label htmlFor="reason">Why are you interested?</Label>
+               <Textarea 
+                 id="reason"
+                 placeholder="e.g., I have 3 years of experience in stock audits and have a team of 2 ready for this date..."
+                 value={interestReason}
+                 onChange={(e) => setInterestReason(e.target.value)}
+                 className="min-h-[120px]"
+               />
+             </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setApplyDialogOpen(false)}>Cancel</Button>
+            <Button onClick={submitApplication} disabled={submittingApp || !interestReason.trim()}>
+              {submittingApp ? 'Submitting...' : 'Submit Application'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- REPORT SUBMISSION DIALOG --- */}
       <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

@@ -4,7 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Briefcase, Clock, CheckCircle, AlertCircle, IndianRupee, MapPin, Eye, Building2, GraduationCap, Calendar, ArrowRight } from 'lucide-react';
+// FIXED: Added 'Calendar' to the imports
+import { Briefcase, Clock, CheckCircle, AlertCircle, IndianRupee, MapPin, Eye, Building2, GraduationCap, ArrowRight, Shield, Calendar } from 'lucide-react';
 import { StatusBadge } from '@/components/StatusBadge';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -31,11 +32,13 @@ export default function AuditorDashboard() {
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   
+  // Application Dialog State
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [selectedJobForApplication, setSelectedJobForApplication] = useState<string | null>(null);
   const [interestReason, setInterestReason] = useState('');
   const [submittingApp, setSubmittingApp] = useState(false);
 
+  // Report Submission State
   const [uploadingReport, setUploadingReport] = useState<string | null>(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [selectedAssignmentForReport, setSelectedAssignmentForReport] = useState<any>(null);
@@ -43,8 +46,9 @@ export default function AuditorDashboard() {
   const [incompleteReason, setIncompleteReason] = useState<string>('');
   const [selectedReportFile, setSelectedReportFile] = useState<File | null>(null);
   
-  const { isComplete: profileComplete, missingFields, canApply } = useProfileValidation();
+  const { isComplete: profileComplete, missingFields } = useProfileValidation();
   
+  // Local Filters
   const [filterCity, setFilterCity] = useState<string>('all');
   const [filterState, setFilterState] = useState<string>('all');
   const [filterAuditType, setFilterAuditType] = useState<string>('all');
@@ -70,59 +74,58 @@ export default function AuditorDashboard() {
     try {
       setLoading(true);
 
+      // 1. Fetch Profile Preferences to filter jobs server-side
       const { data: profile } = await supabase
         .from('auditor_profiles')
         .select('base_state, preferred_states')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      const { data: openData } = await supabase
+      // 2. Build Query for Open Assignments
+      let query = supabase
         .from('assignments')
         .select('*')
         .eq('status', 'open')
         .order('audit_date', { ascending: true });
 
-      let relevantJobs = openData || [];
-      
+      // 3. Apply Location Filter (Server-Side)
       if (profile) {
-        relevantJobs = relevantJobs.filter(job => {
-          const isBaseMatch = job.state === profile.base_state;
-          const isPreferredMatch = profile.preferred_states?.includes(job.state);
-          return (isBaseMatch || isPreferredMatch); 
-        });
+        const allowedStates = [
+          profile.base_state,
+          ...(profile.preferred_states || [])
+        ].filter(Boolean);
+        
+        if (allowedStates.length > 0) {
+           query = query.in('state', allowedStates);
+        }
       }
 
-      setOpenAssignments(relevantJobs);
+      const { data: openData, error: openError } = await query;
+      if (openError) throw openError;
+      setOpenAssignments(openData || []);
 
-      const { data: applicationsData } = await supabase.from('applications').select(`*, assignment:assignments(*)`).eq('auditor_id', user.id).order('applied_at', { ascending: false });
+      // 4. Fetch Applications
+      const { data: applicationsData } = await supabase
+        .from('applications')
+        .select(`*, assignment:assignments(*)`)
+        .eq('auditor_id', user.id)
+        .order('applied_at', { ascending: false });
       setMyApplications(applicationsData || []);
 
-      const { data: myData } = await supabase.from('assignments').select('*').eq('allotted_to', user.id).order('audit_date', { ascending: true });
+      // 5. Fetch My Assignments (Allotted)
+      const { data: myData } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('allotted_to', user.id)
+        .order('audit_date', { ascending: true });
       setMyAssignments(myData || []);
+
     } catch (error: any) {
       console.error("Fetch error:", error);
+      toast.error("Failed to load dashboard data");
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleApplyClick = (assignmentId: string) => {
-    if (!profileComplete) {
-      toast.error(`Please complete your profile first. Missing: ${missingFields.join(', ')}`);
-      return;
-    }
-    if (kycStatus !== 'approved') { 
-      toast.error('Your profile must be approved by admin before applying.'); 
-      return; 
-    }
-    if (myApplications.find(app => app.assignment_id === assignmentId)) { 
-      toast.error('Already applied'); 
-      return; 
-    }
-
-    setSelectedJobForApplication(assignmentId);
-    setInterestReason('');
-    setApplyDialogOpen(true);
   };
 
   const submitApplication = async () => {
@@ -291,8 +294,9 @@ export default function AuditorDashboard() {
                         <CardTitle className="text-lg font-bold text-primary flex items-center gap-2">
                           #{a.assignment_number || a.id.substring(0, 6).toUpperCase()}
                         </CardTitle>
-                        <div className="text-sm text-muted-foreground mt-1 font-medium">
-                          {a.audit_type}
+                        {/* CONFIDENTIALITY: Show Industry or "Confidential" instead of Client Name */}
+                        <div className="text-sm text-muted-foreground mt-1 font-medium flex items-center gap-1">
+                          {a.industry || 'Confidential Client'}
                         </div>
                       </div>
                       <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20">
@@ -327,12 +331,13 @@ export default function AuditorDashboard() {
                   </CardContent>
 
                   <div className="p-6 pt-0 mt-auto">
+                    {/* BUTTON: Navigates to Details Page */}
                     <Button 
                       className="w-full" 
                       onClick={() => navigate(`/assignment/${a.id}`)}
                     >
                       <Eye className="h-4 w-4 mr-2" />
-                      See More Details
+                      View Details
                     </Button>
                   </div>
                 </Card>
@@ -359,11 +364,13 @@ export default function AuditorDashboard() {
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="flex items-center gap-2">
-                           <CardTitle className="text-lg font-bold text-primary">{app.assignment?.client_name}</CardTitle>
+                           {/* CONFIDENTIALITY: Only show Name if Accepted (Allotted) */}
+                           <CardTitle className="text-lg font-bold text-primary">
+                             {app.status === 'accepted' ? app.assignment?.client_name : (app.assignment?.industry || 'Confidential Client')}
+                           </CardTitle>
                         </div>
-                        <div className="text-sm font-medium text-muted-foreground mt-1">{app.assignment?.branch_name}</div>
-                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 font-mono">
-                           #{app.assignment?.assignment_number || 'NA'}
+                        <div className="text-sm font-medium text-muted-foreground mt-1">
+                           {app.status === 'accepted' ? app.assignment?.branch_name : 'Branch Hidden'}
                         </div>
                       </div>
                       <StatusBadge status={app.status} />
@@ -379,14 +386,11 @@ export default function AuditorDashboard() {
                            <Calendar className="h-4 w-4 text-primary/70" /> 
                            Start: {app.assignment?.audit_date ? format(new Date(app.assignment.audit_date), 'dd MMM yyyy') : 'TBD'}
                         </div>
-                        <div className="flex items-center gap-2 text-muted-foreground col-span-2">
-                           <Briefcase className="h-4 w-4 text-primary/70" /> 
-                           {app.assignment?.audit_type}
-                        </div>
-                        <div className="flex items-center gap-2 font-medium text-green-700 bg-green-50 px-2 py-1 rounded w-fit col-span-2">
-                           <IndianRupee className="h-3 w-3" /> 
-                           {app.assignment?.fees?.toLocaleString()} / day
-                        </div>
+                        {app.status !== 'accepted' && (
+                           <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-2 py-1 rounded w-fit text-xs col-span-2">
+                              <Shield className="h-3 w-3" /> Client details hidden
+                           </div>
+                        )}
                      </div>
                   </CardContent>
                   <CardFooter className="pt-3 border-t bg-muted/10 flex justify-between items-center mt-auto">
@@ -448,6 +452,7 @@ export default function AuditorDashboard() {
 
       {activeTab === 'analytics' && <AuditorAnalytics userId={user?.id || ''} />}
 
+      {/* Apply Dialog (triggered via button inside details page mainly, but keeping here for fallback) */}
       <Dialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Apply for Assignment</DialogTitle><DialogDescription>Why are you the right fit for this audit?</DialogDescription></DialogHeader>

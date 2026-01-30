@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare } from 'lucide-react';
+import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { CreateAssignmentDialog } from '@/components/CreateAssignmentDialog';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { DashboardAnalytics } from '@/components/DashboardAnalytics';
 import { AuditorsList } from '@/components/AuditorsList';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // Import Avatar components
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -36,7 +37,7 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState({ total: 0, open: 0, allotted: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
   
-  const [auditorDetails, setAuditorDetails] = useState<Record<string, { rating: number, experience: number }>>({});
+  const [auditorDetails, setAuditorDetails] = useState<Record<string, any>>({});
 
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
   const [kycDetailOpen, setKycDetailOpen] = useState(false);
@@ -48,6 +49,9 @@ export default function AdminDashboard() {
   const [viewingApplication, setViewingApplication] = useState<any>(null);
   const [selectedKycUser, setSelectedKycUser] = useState<string | null>(null);
   
+  // New State for the Reviewer's Profile Image URL
+  const [applicantPhotoUrl, setApplicantPhotoUrl] = useState<string | null>(null);
+  
   const [tempRating, setTempRating] = useState(0);
   const [rejectionReason, setRejectionReason] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -56,6 +60,39 @@ export default function AdminDashboard() {
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
 
   useEffect(() => { fetchData(); }, []);
+
+  // Effect to fetch/sign the profile image when opening the application review dialog
+  useEffect(() => {
+    const fetchImage = async () => {
+      if (viewingApplication && auditorDetails[viewingApplication.auditor_id]) {
+        const path = auditorDetails[viewingApplication.auditor_id].profile_photo_url;
+        if (path) {
+          if (path.startsWith('http') || path.startsWith('https')) {
+            setApplicantPhotoUrl(path);
+          } else {
+            // It's a private bucket path, sign it
+            const { data } = await supabase.storage
+              .from('kyc-documents')
+              .createSignedUrl(path, 3600); // 1 hour expiry
+            if (data?.signedUrl) {
+              setApplicantPhotoUrl(data.signedUrl);
+            } else {
+              setApplicantPhotoUrl(null);
+            }
+          }
+        } else {
+          setApplicantPhotoUrl(null);
+        }
+      }
+    };
+    
+    if (appDetailOpen) {
+      fetchImage();
+    } else {
+      setApplicantPhotoUrl(null); // Reset when closing
+    }
+  }, [viewingApplication, appDetailOpen, auditorDetails]);
+
 
   const handleTabChange = (tab: string) => setSearchParams({ tab });
 
@@ -95,15 +132,12 @@ export default function AdminDashboard() {
           const auditorIds = apps.map(app => app.auditor_id);
           const { data: profilesData } = await supabase
             .from('auditor_profiles')
-            .select('user_id, rating, experience_years')
+            .select('*')
             .in('user_id', auditorIds);
             
-          const detailsMap: Record<string, { rating: number, experience: number }> = {};
+          const detailsMap: Record<string, any> = {};
           profilesData?.forEach(profile => { 
-            detailsMap[profile.user_id] = { 
-              rating: profile.rating || 0,
-              experience: profile.experience_years || 0
-            }; 
+            detailsMap[profile.user_id] = profile;
           });
           setAuditorDetails(detailsMap);
         }
@@ -198,7 +232,25 @@ export default function AdminDashboard() {
   };
 
   const handleKycApproval = async (uid: string, status: string, reason?: string) => { try { await supabase.from('auditor_profiles').update({ kyc_status: status, rejection_reason: reason || null }).eq('user_id', uid); toast.success(`KYC ${status}`); setKycDetailOpen(false); setRejectionDialogOpen(false); fetchData(); } catch (err: any) { toast.error(err.message); } };
-  const handleDownloadResume = async (path: string) => { if(!path) return; try { const {data} = await supabase.storage.from('kyc-documents').createSignedUrl(path.startsWith('http') ? path.split('kyc-documents/')[1] : path, 3600); if(data?.signedUrl) window.open(data.signedUrl); } catch(e:any) { toast.error(e.message); } };
+  
+  const handleDownloadResume = async (path: string) => { 
+    if(!path) return; 
+    try { 
+      if (path.startsWith('http')) {
+        window.open(path, '_blank');
+        return;
+      }
+      const {data} = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600); 
+      if(data?.signedUrl) {
+        window.open(data.signedUrl, '_blank');
+      } else {
+        toast.error("Could not generate download link");
+      }
+    } catch(e:any) { 
+      toast.error(e.message); 
+    } 
+  };
+
   const handleDeleteAssignment = async (id: string) => { if(confirm('Delete?')) { await supabase.from('assignments').delete().eq('id', id); fetchData(); } };
   const handleChangeAllocation = async (id: string) => { await supabase.from('assignments').update({ allotted_to: null, status: 'open' }).eq('id', id); fetchData(); };
   const submitRating = async () => { if(selectedAssignmentForRating && tempRating > 0) { await supabase.from('assignments').update({ status: 'completed', auditor_rating: tempRating, completed_at: new Date().toISOString() }).eq('id', selectedAssignmentForRating); setRatingDialogOpen(false); fetchData(); toast.success('Rated!'); } };
@@ -310,7 +362,7 @@ export default function AdminDashboard() {
                     </TableHeader>
                     <TableBody>
                       {group.applicants.map((app: any) => {
-                        const details = auditorDetails[app.auditor_id] || { rating: 0, experience: 0 };
+                        const details = auditorDetails[app.auditor_id] || {};
                         return (
                           <TableRow key={app.id}>
                             <TableCell>
@@ -320,11 +372,11 @@ export default function AdminDashboard() {
                                 <span className="flex items-center gap-1"><Phone className="h-3 w-3"/> {app.auditor?.phone || 'N/A'}</span>
                               </div>
                             </TableCell>
-                            <TableCell className="font-medium">{details.experience} Years</TableCell>
+                            <TableCell className="font-medium">{details.experience_years || 0} Years</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-full w-fit">
                                 <Star className="h-3 w-3 text-amber-500 fill-amber-500" />
-                                <span className="text-xs font-semibold text-amber-700">{details.rating}</span>
+                                <span className="text-xs font-semibold text-amber-700">{details.rating || 0}</span>
                               </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground text-sm">
@@ -332,7 +384,7 @@ export default function AdminDashboard() {
                             </TableCell>
                             <TableCell className="text-right">
                               <Button size="sm" variant="outline" onClick={() => openApplicationDetail(app)}>
-                                Review Application
+                                Review
                               </Button>
                             </TableCell>
                           </TableRow>
@@ -347,6 +399,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* ... Other tabs ... */}
       {activeTab === 'kyc-approvals' && (
         <Card>
           <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
@@ -367,54 +420,145 @@ export default function AdminDashboard() {
       {activeTab === 'user-roles' && <UserRoleManagement />}
 
       <Dialog open={appDetailOpen} onOpenChange={setAppDetailOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Application Review</DialogTitle>
-            <DialogDescription>Review application details</DialogDescription>
+            <DialogTitle className="text-2xl">Application Review</DialogTitle>
+            <DialogDescription>Detailed analysis of applicant profile</DialogDescription>
           </DialogHeader>
-          {viewingApplication && (
+          
+          {viewingApplication && auditorDetails[viewingApplication.auditor_id] ? (
             <div className="space-y-6 py-4">
-              <div className="grid grid-cols-2 gap-4 border-b pb-4">
-                <div>
-                  <Label className="text-muted-foreground text-xs">Auditor Name</Label>
-                  <div className="font-semibold text-lg">{viewingApplication.auditor?.full_name}</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-muted/10 p-4 rounded-xl border">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                     {/* UPDATED: Image Display */}
+                     <Avatar className="h-14 w-14 border-2 border-primary/20">
+                        <AvatarImage src={applicantPhotoUrl || ''} className="object-cover" />
+                        <AvatarFallback className="bg-primary/10 text-primary font-bold text-xl">
+                          {viewingApplication.auditor?.full_name?.charAt(0) || 'U'}
+                        </AvatarFallback>
+                     </Avatar>
+                     
+                     <div>
+                        <h3 className="font-bold text-lg">{viewingApplication.auditor?.full_name}</h3>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <MapPin className="h-3 w-3" /> 
+                          {auditorDetails[viewingApplication.auditor_id].base_city}, {auditorDetails[viewingApplication.auditor_id].base_state}
+                        </div>
+                     </div>
+                  </div>
+                  
+                  <div className="space-y-1 pt-2">
+                     <div className="flex items-center gap-2 text-sm"><Mail className="h-4 w-4 text-muted-foreground"/> {viewingApplication.auditor?.email}</div>
+                     <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground"/> {viewingApplication.auditor?.phone || 'N/A'}</div>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Contact</Label>
-                  <div className="flex items-center gap-2 text-sm"><Phone className="h-3 w-3"/> {viewingApplication.auditor?.phone || 'N/A'}</div>
-                  <div className="flex items-center gap-2 text-sm"><Mail className="h-3 w-3"/> {viewingApplication.auditor?.email}</div>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Experience</Label>
-                  <div className="font-medium">{auditorDetails[viewingApplication.auditor_id]?.experience} Years</div>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Current Rating</Label>
-                  <div className="flex items-center gap-1 font-medium"><Star className="h-3 w-3 text-amber-500 fill-amber-500"/> {auditorDetails[viewingApplication.auditor_id]?.rating}</div>
+
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-background p-3 rounded-lg border">
+                      <div className="text-xs text-muted-foreground uppercase font-bold">Experience</div>
+                      <div className="text-lg font-semibold">{auditorDetails[viewingApplication.auditor_id].experience_years} Years</div>
+                   </div>
+                   <div className="bg-background p-3 rounded-lg border">
+                      <div className="text-xs text-muted-foreground uppercase font-bold">Rating</div>
+                      <div className="flex items-center gap-1 text-lg font-semibold">
+                         {auditorDetails[viewingApplication.auditor_id].rating} <Star className="h-4 w-4 text-amber-500 fill-amber-500"/>
+                      </div>
+                   </div>
+                   <div className="bg-background p-3 rounded-lg border col-span-2">
+                      <div className="text-xs text-muted-foreground uppercase font-bold">Core Competency</div>
+                      <div className="font-medium text-primary">{auditorDetails[viewingApplication.auditor_id].core_competency || 'N/A'}</div>
+                   </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2 text-primary font-semibold">
-                  <MessageSquare className="h-4 w-4" /> Interest Reason
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><GraduationCap className="h-4 w-4"/> Qualifications</Label>
+                       <div className="flex flex-wrap gap-2">
+                          {auditorDetails[viewingApplication.auditor_id].qualifications?.map((q: string) => (
+                             <Badge key={q} variant="secondary">{q}</Badge>
+                          )) || <span className="text-sm text-muted-foreground">None listed</span>}
+                       </div>
+                    </div>
+
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><Briefcase className="h-4 w-4"/> Competencies</Label>
+                       <div className="flex flex-wrap gap-2">
+                          {auditorDetails[viewingApplication.auditor_id].competencies?.map((c: string) => (
+                             <Badge key={c} variant="outline">{c}</Badge>
+                          )) || <span className="text-sm text-muted-foreground">None listed</span>}
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="space-y-4">
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><Users className="h-4 w-4"/> Team Availability</Label>
+                       <div className="p-3 border rounded-md text-sm">
+                          {auditorDetails[viewingApplication.auditor_id].has_manpower ? (
+                             <span className="text-green-600 font-medium flex items-center gap-2">
+                                <Users className="h-4 w-4"/> Yes, Team of {auditorDetails[viewingApplication.auditor_id].manpower_count}
+                             </span>
+                          ) : (
+                             <span className="text-muted-foreground">Individual Auditor (No Manpower)</span>
+                          )}
+                       </div>
+                    </div>
+
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><Navigation className="h-4 w-4"/> Travel & Logistics</Label>
+                       <div className="p-3 border rounded-md text-sm space-y-1">
+                          <div className="flex justify-between">
+                             <span className="text-muted-foreground">Travel Radius:</span>
+                             <span className="font-medium">{auditorDetails[viewingApplication.auditor_id].willing_to_travel_radius} km</span>
+                          </div>
+                          <div className="flex justify-between">
+                             <span className="text-muted-foreground">Preferred States:</span>
+                             <span className="font-medium text-right max-w-[200px] truncate">
+                                {auditorDetails[viewingApplication.auditor_id].preferred_states?.join(', ') || 'None'}
+                             </span>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
+              <div>
+                <Label className="flex items-center gap-2 text-primary font-semibold mb-2">
+                  <MessageSquare className="h-4 w-4" /> Why they applied (Interest Reason)
                 </Label>
-                <div className="bg-muted/30 p-4 rounded-lg text-sm italic border">
-                  "{viewingApplication.interest_reason || 'No reason provided.'}"
+                <div className="bg-muted/30 p-4 rounded-lg text-sm italic border border-l-4 border-l-primary">
+                  "{viewingApplication.interest_reason || 'No specific reason provided.'}"
                 </div>
               </div>
 
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button variant="outline" onClick={() => setAppDetailOpen(false)}>Close</Button>
+              {auditorDetails[viewingApplication.auditor_id].resume_url && (
+                 <div className="flex justify-start">
+                    <Button variant="outline" onClick={() => handleDownloadResume(auditorDetails[viewingApplication.auditor_id].resume_url)}>
+                       <Download className="h-4 w-4 mr-2" /> Download Applicant's Resume
+                    </Button>
+                 </div>
+              )}
+
+              <Separator />
+
+              <DialogFooter className="gap-2 sm:gap-0 sticky bottom-0 bg-background pt-2">
+                <Button variant="outline" onClick={() => setAppDetailOpen(false)}>Close Review</Button>
                 <Button variant="destructive" onClick={() => handleDeleteApplication(viewingApplication.id)}>Reject Application</Button>
                 <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleAllotAssignment(viewingApplication.id, viewingApplication.assignment_id, viewingApplication.auditor_id)}>
-                  Allot Assignment
+                  Accept & Allot Assignment
                 </Button>
               </DialogFooter>
             </div>
+          ) : (
+             <div className="py-10 text-center text-muted-foreground">Loading profile details...</div>
           )}
         </DialogContent>
       </Dialog>
-
+      
+      {/* ... Other Dialogs (KYC, Rejection, Rating) remain the same ... */}
       <Dialog open={kycDetailOpen} onOpenChange={setKycDetailOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Auditor Profile</DialogTitle></DialogHeader>

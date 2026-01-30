@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { NotificationBell } from '@/components/NotificationBell';
 import {
   Sidebar,
@@ -64,59 +64,49 @@ function AppSidebar({
   const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
-  
-  const [fullName, setFullName] = useState<string>('User');
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user) {
-      getProfile();
-    }
-  }, [user]);
+  // OPTIMIZATION: Use React Query for instant loading and caching
+  // This prevents the flicker/delay you saw earlier.
+  const { data: profileData } = useQuery({
+    queryKey: ['sidebar-user-profile', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return { fullName: 'User', avatarUrl: null };
 
-  const getProfile = async () => {
-    if (!user) return;
-    try {
-      // 1. Fetch Name from 'profiles' table
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user.id)
-        .single();
+      // Fetch Profile Name and Auditor Photo URL in Parallel
+      const [profileResponse, auditorResponse] = await Promise.all([
+        supabase.from('profiles').select('full_name').eq('id', user.id).single(),
+        supabase.from('auditor_profiles').select('profile_photo_url').eq('user_id', user.id).maybeSingle()
+      ]);
 
-      if (profileData?.full_name) {
-        setFullName(profileData.full_name);
-      }
+      let fullName = profileResponse.data?.full_name || 'User';
+      let avatarUrl = null;
 
-      
-      const { data: auditorData } = await supabase
-        .from('auditor_profiles')
-        .select('profile_photo_url')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (auditorData?.profile_photo_url) {
-        const path = auditorData.profile_photo_url;
+      // Handle Profile Photo (Sign URL if needed)
+      if (auditorResponse.data?.profile_photo_url) {
+        const path = auditorResponse.data.profile_photo_url;
         
-        // If it's already a full URL (e.g. from Google Auth or external), use it
         if (path.startsWith('http') || path.startsWith('https')) {
-          setAvatarUrl(path);
+          avatarUrl = path;
         } else {
-          // Otherwise, generate a signed URL from the 'kyc-documents' bucket
-          // We use signed URL because 'kyc-documents' is a private bucket
+          // Generate signed URL for private bucket items
           const { data: signedData } = await supabase.storage
             .from('kyc-documents')
             .createSignedUrl(path, 3600 * 24); // Valid for 24 hours
 
           if (signedData?.signedUrl) {
-            setAvatarUrl(signedData.signedUrl);
+            avatarUrl = signedData.signedUrl;
           }
         }
       }
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-    }
-  };
+
+      return { fullName, avatarUrl };
+    },
+    enabled: !!user?.id,
+    staleTime: 1000 * 60 * 30, // Cache for 30 minutes
+  });
+
+  const fullName = profileData?.fullName || 'User';
+  const avatarUrl = profileData?.avatarUrl;
 
   const getInitials = (name: string) => {
     return name
@@ -231,10 +221,19 @@ export function DashboardLayout({
   activeTab, 
   onTabChange 
 }: DashboardLayoutProps) {
+  // 1. Get auth state
+  const { userRole, isProfileComplete } = useAuth();
+
+  // 2. Filter Logic: If Auditor AND Profile Incomplete, ONLY show "My Profile"
+  // We check if the item.href is '/profile-setup' to allow it.
+  const filteredNavItems = (userRole === 'auditor' && !isProfileComplete)
+    ? navItems.filter(item => item.href === '/profile-setup') 
+    : navItems;
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-background">
-        <AppSidebar navItems={navItems} activeTab={activeTab} onTabChange={onTabChange} />
+        <AppSidebar navItems={filteredNavItems} activeTab={activeTab} onTabChange={onTabChange} />
         
         <div className="flex-1 flex flex-col min-w-0">
           <header className="sticky top-0 z-10 h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
