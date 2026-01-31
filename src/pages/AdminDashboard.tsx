@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation } from 'lucide-react';
+import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation, Repeat } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { CreateAssignmentDialog } from '@/components/CreateAssignmentDialog';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -22,8 +22,7 @@ import { DashboardLayout, adminNavItems } from '@/components/DashboardLayout';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { DashboardAnalytics } from '@/components/DashboardAnalytics';
-import { AuditorsList } from '@/components/AuditorsList';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // Import Avatar components
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -43,13 +42,17 @@ export default function AdminDashboard() {
   const [kycDetailOpen, setKycDetailOpen] = useState(false);
   const [appDetailOpen, setAppDetailOpen] = useState(false);
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
+  
+  // Reallocation State
+  const [reallocateDialogOpen, setReallocateDialogOpen] = useState(false);
+  const [reallocationList, setReallocationList] = useState<any[]>([]);
+  const [selectedAssignmentForRealloc, setSelectedAssignmentForRealloc] = useState<string | null>(null);
 
   const [selectedAssignmentForRating, setSelectedAssignmentForRating] = useState<string | null>(null);
   const [viewingKycProfile, setViewingKycProfile] = useState<any>(null);
   const [viewingApplication, setViewingApplication] = useState<any>(null);
   const [selectedKycUser, setSelectedKycUser] = useState<string | null>(null);
   
-  // New State for the Reviewer's Profile Image URL
   const [applicantPhotoUrl, setApplicantPhotoUrl] = useState<string | null>(null);
   
   const [tempRating, setTempRating] = useState(0);
@@ -61,7 +64,6 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Effect to fetch/sign the profile image when opening the application review dialog
   useEffect(() => {
     const fetchImage = async () => {
       if (viewingApplication && auditorDetails[viewingApplication.auditor_id]) {
@@ -70,10 +72,9 @@ export default function AdminDashboard() {
           if (path.startsWith('http') || path.startsWith('https')) {
             setApplicantPhotoUrl(path);
           } else {
-            // It's a private bucket path, sign it
             const { data } = await supabase.storage
               .from('kyc-documents')
-              .createSignedUrl(path, 3600); // 1 hour expiry
+              .createSignedUrl(path, 3600);
             if (data?.signedUrl) {
               setApplicantPhotoUrl(data.signedUrl);
             } else {
@@ -89,7 +90,7 @@ export default function AdminDashboard() {
     if (appDetailOpen) {
       fetchImage();
     } else {
-      setApplicantPhotoUrl(null); // Reset when closing
+      setApplicantPhotoUrl(null);
     }
   }, [viewingApplication, appDetailOpen, auditorDetails]);
 
@@ -156,7 +157,6 @@ export default function AdminDashboard() {
 
   const groupedApplications = useMemo(() => {
     const grouped: Record<string, { assignment: any, applicants: any[] }> = {};
-    
     applications.forEach(app => {
       const assignId = app.assignment_id;
       if (!grouped[assignId]) {
@@ -167,7 +167,6 @@ export default function AdminDashboard() {
       }
       grouped[assignId].applicants.push(app);
     });
-    
     return grouped;
   }, [applications]);
 
@@ -220,6 +219,97 @@ export default function AdminDashboard() {
     } catch (error: any) { toast.error(error.message); }
   };
 
+  // --- REALLOCATION LOGIC START ---
+  const handleOpenReallocate = async (assignmentId: string) => {
+    setSelectedAssignmentForRealloc(assignmentId);
+    setReallocationList([]);
+    setReallocateDialogOpen(true);
+
+    try {
+      // 1. Fetch ALL applications for this assignment (including rejected ones)
+      const { data: apps, error } = await supabase
+        .from('applications')
+        .select(`
+          *, 
+          auditor:profiles(full_name, email, phone)
+        `)
+        .eq('assignment_id', assignmentId);
+
+      if (error) throw error;
+      if (!apps) return;
+
+      // 2. Fetch Full Auditor Profiles
+      const auditorIds = apps.map(a => a.auditor_id);
+      const { data: profiles } = await supabase
+        .from('auditor_profiles')
+        .select('*')
+        .in('user_id', auditorIds);
+      
+      if (profiles) {
+        const newDetailsMap: Record<string, any> = {};
+        profiles.forEach(profile => { 
+          newDetailsMap[profile.user_id] = profile;
+        });
+        setAuditorDetails(prev => ({ ...prev, ...newDetailsMap }));
+      }
+      
+      const mergedList = apps.map(app => {
+        const profile = profiles?.find(p => p.user_id === app.auditor_id);
+        return {
+          ...app,
+          rating: profile?.rating || 0,
+          experience: profile?.experience_years || 0
+        };
+      });
+
+      setReallocationList(mergedList);
+
+    } catch (error: any) {
+      toast.error('Failed to load applicants');
+    }
+  };
+
+  const confirmReallocation = async (applicationId: string, newAuditorId: string) => {
+    if (!selectedAssignmentForRealloc) return;
+    
+    if (!confirm("Confirm re-allocation? This will notify the new auditor.")) return;
+
+    try {
+      const { error: assignError } = await supabase
+        .from('assignments')
+        .update({ allotted_to: newAuditorId, status: 'allotted' })
+        .eq('id', selectedAssignmentForRealloc);
+
+      if (assignError) throw assignError;
+
+      await supabase
+        .from('applications')
+        .update({ status: 'rejected' })
+        .eq('assignment_id', selectedAssignmentForRealloc);
+
+      await supabase
+        .from('applications')
+        .update({ status: 'accepted' })
+        .eq('id', applicationId);
+
+      await supabase.from('notifications').insert({
+        user_id: newAuditorId,
+        title: 'Assignment Re-allocated to You! 🎉',
+        message: 'An assignment has been transferred to you. Check My Assignments.',
+        type: 'success',
+        related_assignment_id: selectedAssignmentForRealloc
+      });
+
+      toast.success('Auditor changed successfully');
+      setReallocateDialogOpen(false);
+      fetchData();
+
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  };
+  // --- REALLOCATION LOGIC END ---
+
   const handleDeleteApplication = async (applicationId: string) => {
     if (!confirm('Are you sure you want to reject this application?')) return;
     try {
@@ -252,7 +342,6 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteAssignment = async (id: string) => { if(confirm('Delete?')) { await supabase.from('assignments').delete().eq('id', id); fetchData(); } };
-  const handleChangeAllocation = async (id: string) => { await supabase.from('assignments').update({ allotted_to: null, status: 'open' }).eq('id', id); fetchData(); };
   const submitRating = async () => { if(selectedAssignmentForRating && tempRating > 0) { await supabase.from('assignments').update({ status: 'completed', auditor_rating: tempRating, completed_at: new Date().toISOString() }).eq('id', selectedAssignmentForRating); setRatingDialogOpen(false); fetchData(); toast.success('Rated!'); } };
   const openViewDetails = (p: any) => { setViewingKycProfile(p); setKycDetailOpen(true); };
 
@@ -312,7 +401,11 @@ export default function AdminDashboard() {
                       <TableCell>
                         <div className="flex gap-2">
                           <Button size="sm" variant="destructive" onClick={() => handleDeleteAssignment(a.id)}>Delete</Button>
-                          {a.status === 'allotted' && <Button size="sm" variant="outline" onClick={() => handleChangeAllocation(a.id)}>Change</Button>}
+                          {a.status === 'allotted' && (
+                            <Button size="sm" variant="outline" onClick={() => handleOpenReallocate(a.id)}>
+                              <Repeat className="h-3 w-3 mr-1" /> Change
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -399,7 +492,69 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ... Other tabs ... */}
+      {/* --- REALLOCATION DIALOG --- */}
+      <Dialog open={reallocateDialogOpen} onOpenChange={setReallocateDialogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Re-allocate Assignment</DialogTitle>
+            <DialogDescription>Select another auditor from the applicant pool.</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-auto">
+             <Table>
+               <TableHeader>
+                 <TableRow>
+                   <TableHead>Auditor</TableHead>
+                   <TableHead>Stats</TableHead>
+                   <TableHead>Status</TableHead>
+                   <TableHead className="text-right">Action</TableHead>
+                 </TableRow>
+               </TableHeader>
+               <TableBody>
+                 {reallocationList.length === 0 ? (
+                    <TableRow><TableCell colSpan={4} className="text-center py-4 text-muted-foreground">No other applicants found.</TableCell></TableRow>
+                 ) : (
+                    reallocationList.map((app) => (
+                      <TableRow key={app.id}>
+                         <TableCell>
+                            <div className="font-medium">{app.auditor?.full_name}</div>
+                            <div className="text-xs text-muted-foreground">{app.auditor?.email}</div>
+                         </TableCell>
+                         <TableCell>
+                            <div className="text-xs">
+                               <span className="font-semibold">{app.experience} yrs</span> • {app.rating} <Star className="inline h-3 w-3 fill-amber-500 text-amber-500"/>
+                            </div>
+                         </TableCell>
+                         <TableCell>
+                            <StatusBadge status={app.status} />
+                         </TableCell>
+                         <TableCell className="text-right">
+                            {app.status !== 'accepted' ? (
+                               <div className="flex justify-end gap-2">
+                                  <Button size="sm" variant="ghost" onClick={() => openApplicationDetail(app)}>
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" onClick={() => confirmReallocation(app.id, app.auditor_id)}>
+                                     Assign
+                                  </Button>
+                               </div>
+                            ) : (
+                               <span className="text-xs font-medium text-green-600">Current</span>
+                            )}
+                         </TableCell>
+                      </TableRow>
+                    ))
+                 )}
+               </TableBody>
+             </Table>
+          </div>
+          <DialogFooter>
+             <Button variant="outline" onClick={() => setReallocateDialogOpen(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* --- END REALLOCATION DIALOG --- */}
+
+      {/* ... (Keep existing KYC Approvals, Deadlines, etc.) ... */}
       {activeTab === 'kyc-approvals' && (
         <Card>
           <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
@@ -415,7 +570,6 @@ export default function AdminDashboard() {
       )}
 
       {activeTab === 'deadlines' && <DeadlineReminders />}
-      {activeTab === 'auditors' && <AuditorsList />}
       {activeTab === 'reports' && <ReportsManagement />}
       {activeTab === 'user-roles' && <UserRoleManagement />}
 
@@ -431,7 +585,6 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-muted/10 p-4 rounded-xl border">
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                     {/* UPDATED: Image Display */}
                      <Avatar className="h-14 w-14 border-2 border-primary/20">
                         <AvatarImage src={applicantPhotoUrl || ''} className="object-cover" />
                         <AvatarFallback className="bg-primary/10 text-primary font-bold text-xl">
@@ -558,7 +711,6 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
       
-      {/* ... Other Dialogs (KYC, Rejection, Rating) remain the same ... */}
       <Dialog open={kycDetailOpen} onOpenChange={setKycDetailOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Auditor Profile</DialogTitle></DialogHeader>

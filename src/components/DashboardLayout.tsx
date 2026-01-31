@@ -65,14 +65,11 @@ function AppSidebar({
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
 
-  // OPTIMIZATION: Use React Query for instant loading and caching
-  // This prevents the flicker/delay you saw earlier.
   const { data: profileData } = useQuery({
     queryKey: ['sidebar-user-profile', user?.id],
     queryFn: async () => {
       if (!user?.id) return { fullName: 'User', avatarUrl: null };
 
-      // Fetch Profile Name and Auditor Photo URL in Parallel
       const [profileResponse, auditorResponse] = await Promise.all([
         supabase.from('profiles').select('full_name').eq('id', user.id).single(),
         supabase.from('auditor_profiles').select('profile_photo_url').eq('user_id', user.id).maybeSingle()
@@ -81,17 +78,15 @@ function AppSidebar({
       let fullName = profileResponse.data?.full_name || 'User';
       let avatarUrl = null;
 
-      // Handle Profile Photo (Sign URL if needed)
       if (auditorResponse.data?.profile_photo_url) {
         const path = auditorResponse.data.profile_photo_url;
         
         if (path.startsWith('http') || path.startsWith('https')) {
           avatarUrl = path;
         } else {
-          // Generate signed URL for private bucket items
           const { data: signedData } = await supabase.storage
             .from('kyc-documents')
-            .createSignedUrl(path, 3600 * 24); // Valid for 24 hours
+            .createSignedUrl(path, 3600 * 24); 
 
           if (signedData?.signedUrl) {
             avatarUrl = signedData.signedUrl;
@@ -102,7 +97,7 @@ function AppSidebar({
       return { fullName, avatarUrl };
     },
     enabled: !!user?.id,
-    staleTime: 1000 * 60 * 30, // Cache for 30 minutes
+    staleTime: 1000 * 60 * 30, 
   });
 
   const fullName = profileData?.fullName || 'User';
@@ -120,7 +115,6 @@ function AppSidebar({
   return (
     <Sidebar collapsible="icon" className="border-r-0 bg-sidebar">
       <SidebarContent className="pt-6 px-3">
-        {/* User Header */}
         <div className={cn(
           "flex items-center gap-3 px-2 mb-8 transition-all duration-300",
           collapsed ? "justify-center" : "justify-start"
@@ -221,11 +215,9 @@ export function DashboardLayout({
   activeTab, 
   onTabChange 
 }: DashboardLayoutProps) {
-  // 1. Get auth state
   const { userRole, isProfileComplete } = useAuth();
 
-  // 2. Filter Logic: If Auditor AND Profile Incomplete, ONLY show "My Profile"
-  // We check if the item.href is '/profile-setup' to allow it.
+  // If Auditor AND Profile Incomplete, ONLY show "My Profile"
   const filteredNavItems = (userRole === 'auditor' && !isProfileComplete)
     ? navItems.filter(item => item.href === '/profile-setup') 
     : navItems;
@@ -263,11 +255,11 @@ export function DashboardLayout({
   );
 }
 
+// UPDATED: "Auditors" removed from Admin list
 export const adminNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
   { title: 'Assignments', icon: Briefcase, href: '/dashboard?tab=assignments' },
   { title: 'Deadlines', icon: AlertTriangle, href: '/dashboard?tab=deadlines' },
-  { title: 'Auditors', icon: Users, href: '/dashboard?tab=auditors' },
   { title: 'Applications', icon: FileCheck, href: '/dashboard?tab=applications' },
   { title: 'Reports', icon: FileText, href: '/dashboard?tab=reports' },
   { title: 'KYC Approvals', icon: Shield, href: '/dashboard?tab=kyc-approvals' },

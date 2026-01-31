@@ -8,15 +8,16 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, MapPin, Calendar, Clock, Info, Laptop, 
-  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation 
+  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation, Shield, Lock
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, isPast, isToday } from 'date-fns';
 import { DashboardLayout, auditorNavItems, adminNavItems } from '@/components/DashboardLayout';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useProfileValidation } from '@/hooks/useProfileValidation';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function AssignmentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,8 +26,12 @@ export default function AssignmentDetail() {
   const { toast } = useToast();
   
   const [assignment, setAssignment] = useState<any>(null);
-  const [loading, setLoading] = useState(true); // Added loading state
+  const [loading, setLoading] = useState(true);
   const [hasApplied, setHasApplied] = useState(false);
+  
+  // Validation States
+  const [isBankKycComplete, setIsBankKycComplete] = useState(false);
+  const { isComplete: profileComplete, missingFields } = useProfileValidation();
   
   // Application Dialog State
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
@@ -42,18 +47,33 @@ export default function AssignmentDetail() {
   const [completionRemarks, setCompletionRemarks] = useState('');
   const [selectedReportFile, setSelectedReportFile] = useState<File | null>(null);
 
-  const { isComplete: profileComplete, missingFields } = useProfileValidation();
-
   useEffect(() => {
     if (id) {
       fetchAssignmentDetails();
     }
+    if (user) {
+      checkBankKycStatus();
+    }
   }, [id, user]);
+
+  const checkBankKycStatus = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from('bank_kyc_details')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      
+      setIsBankKycComplete(!!data);
+    } catch (error) {
+      console.error('Error checking KYC:', error);
+    }
+  };
 
   const fetchAssignmentDetails = async () => {
     try {
       setLoading(true);
-      // 1. Fetch Assignment
       const { data: job, error } = await supabase
         .from('assignments')
         .select('*')
@@ -63,7 +83,6 @@ export default function AssignmentDetail() {
       if (error) throw error;
       setAssignment(job);
 
-      // 2. Check if already applied (for auditors)
       if (user && userRole === 'auditor') {
         const { data: application } = await supabase
           .from('applications')
@@ -75,7 +94,6 @@ export default function AssignmentDetail() {
         if (application) setHasApplied(true);
       }
 
-      // 3. Get Signed URL for report if exists
       if (job.report_url && !job.report_url.startsWith('http')) {
           const { data, error: signError } = await supabase.storage
             .from('kyc-documents')
@@ -87,36 +105,42 @@ export default function AssignmentDetail() {
     } catch (error: any) {
       console.error('Error fetching assignment:', error);
       toast({ title: 'Error', description: 'Could not load assignment details', variant: 'destructive' });
-      navigate('/dashboard'); // Redirect on error
+      navigate('/dashboard');
     } finally {
       setLoading(false);
     }
   };
 
-  // 1. Triggered when clicking "Apply Now" - Opens Dialog
   const handleApplyClick = () => {
     if (!user) return;
     
-    // Validate Profile
     if (!profileComplete) {
       toast({ 
         title: 'Incomplete Profile', 
         description: `Please complete your profile first. Missing: ${missingFields.join(', ')}`, 
         variant: 'destructive' 
       });
+      navigate('/profile-setup');
       return;
     }
 
-    // Reset and Open Dialog
+    if (!isBankKycComplete) {
+      toast({ 
+        title: 'Incomplete Bank/KYC', 
+        description: 'Please complete your Bank and KYC details before applying.', 
+        variant: 'destructive' 
+      });
+      navigate('/bank-kyc');
+      return;
+    }
+
     setInterestReason('');
     setApplyDialogOpen(true);
   };
 
-  // 2. Triggered when clicking "Submit Application" inside the dialog
   const submitApplication = async () => {
     if (!user || !id) return;
 
-    // VALIDATION: Must provide a reason
     if (!interestReason.trim()) {
       toast({ 
         title: "Reason Required", 
@@ -128,7 +152,6 @@ export default function AssignmentDetail() {
 
     setSubmittingApp(true);
     try {
-      // Check application limit
       const { data: job } = await supabase.from('assignments').select('applicant_count').eq('id', id).single();
       if (job && job.applicant_count >= 5) {
          toast({ title: "Limit Reached", description: "Maximum application limit (5) reached just now.", variant: "destructive" });
@@ -142,13 +165,12 @@ export default function AssignmentDetail() {
         .insert({
           assignment_id: id,
           auditor_id: user.id,
-          interest_reason: interestReason, // Save the reason
+          interest_reason: interestReason,
           status: 'pending'
         });
 
       if (error) throw error;
 
-      // Log activity
       await supabase.from('assignment_activities').insert({
         assignment_id: id,
         user_id: user.id,
@@ -158,7 +180,7 @@ export default function AssignmentDetail() {
 
       toast({ title: "Applied Successfully", description: "The client will be notified." });
       setHasApplied(true);
-      setApplyDialogOpen(false); // Close dialog on success
+      setApplyDialogOpen(false);
 
     } catch (error: any) {
       toast({ title: "Application Failed", description: error.message, variant: "destructive" });
@@ -229,7 +251,23 @@ export default function AssignmentDetail() {
     );
   }
 
-  if (!assignment) return null; // Should have redirected
+  if (!assignment) return null;
+
+  const isAllottedToMe = assignment.allotted_to === user?.id;
+  const isAdmin = userRole === 'admin';
+  const canViewClientName = isAdmin || isAllottedToMe;
+
+  const displayTitle = canViewClientName 
+    ? (assignment.client_name || 'Unnamed Client') 
+    : (assignment.industry || 'Confidential Client');
+    
+  const displaySubtitle = canViewClientName 
+    ? assignment.branch_name 
+    : 'Branch details hidden until allotment';
+
+  // LOGIC: ACTIVE IF TODAY OR PAST
+  const auditDate = new Date(assignment.audit_date);
+  const isActive = isToday(auditDate) || isPast(auditDate);
 
   return (
     <DashboardLayout title="Assignment Details" navItems={navItems}>
@@ -238,7 +276,18 @@ export default function AssignmentDetail() {
           <ArrowLeft className="h-4 w-4" /> Back to Jobs
         </Button>
 
-        {/* --- MAIN DETAILS CARD (THE "DETAIL BOX") --- */}
+        {/* INACTIVE BANNER */}
+        {isAllottedToMe && !isActive && (
+           <Alert className="border-amber-200 bg-amber-50">
+              <Lock className="h-4 w-4 text-amber-600"/>
+              <AlertTitle className="text-amber-800">Assignment Scheduled</AlertTitle>
+              <AlertDescription className="text-amber-700">
+                 This audit is scheduled for <strong>{format(auditDate, 'dd MMMM yyyy')}</strong>. 
+                 Actions like reporting and completion will become available on that day.
+              </AlertDescription>
+           </Alert>
+        )}
+
         <Card className="border-t-4 border-t-primary shadow-md bg-card">
           <CardHeader className="pb-4 border-b">
             <div className="flex flex-col md:flex-row justify-between gap-4">
@@ -248,11 +297,27 @@ export default function AssignmentDetail() {
                     #{assignment.assignment_number || 'ID-N/A'}
                   </Badge>
                   <Badge className="capitalize">{assignment.audit_type}</Badge>
+                  {!canViewClientName && (
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <Shield className="h-3 w-3" /> Confidential
+                    </Badge>
+                  )}
                 </div>
-                <CardTitle className="text-2xl font-bold">{assignment.industry || assignment.client_name}</CardTitle>
-                <CardDescription className="flex items-center gap-2 mt-2 text-base">
-                  <MapPin className="h-4 w-4" /> 
-                  {assignment.city}, {assignment.state}
+                
+                <CardTitle className="text-2xl font-bold">
+                  {displayTitle}
+                </CardTitle>
+                
+                <CardDescription className="flex flex-col gap-1 mt-2 text-base">
+                  <span className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4" /> 
+                    {assignment.city}, {assignment.state}
+                  </span>
+                  {canViewClientName && (
+                    <span className="text-sm text-muted-foreground">
+                      Branch: {displaySubtitle}
+                    </span>
+                  )}
                 </CardDescription>
               </div>
               <div className="text-right">
@@ -263,8 +328,6 @@ export default function AssignmentDetail() {
           </CardHeader>
           
           <CardContent className="pt-6 grid gap-8 md:grid-cols-3">
-            
-            {/* Left Column: Key Details */}
             <div className="md:col-span-2 space-y-6">
               <section>
                 <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -272,6 +335,10 @@ export default function AssignmentDetail() {
                 </h3>
                 <div className="bg-muted/30 p-4 rounded-lg space-y-3 border">
                   <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-sm text-muted-foreground">Industry</span>
+                      <p className="font-medium">{assignment.industry || 'Not Specified'}</p>
+                    </div>
                     <div>
                       <span className="text-sm text-muted-foreground">Qualification Required</span>
                       <p className="font-medium">{assignment.qualification_required || 'Not specified'}</p>
@@ -303,8 +370,8 @@ export default function AssignmentDetail() {
                 </section>
               )}
 
-              {/* Show Report Section if Allotted to User */}
-              {assignment.allotted_to === user?.id && (
+              {/* REPORT SECTION: ONLY SHOW IF ACTIVE */}
+              {isAllottedToMe && isActive && (
                 <section className="mt-8 border-t pt-6">
                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                       <FileText className="h-5 w-5 text-primary" /> Report & Completion
@@ -336,7 +403,6 @@ export default function AssignmentDetail() {
               )}
             </div>
 
-            {/* Right Column: Timeline & Action */}
             <div className="space-y-6">
               <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="pt-6 space-y-4">
@@ -361,7 +427,6 @@ export default function AssignmentDetail() {
                           <CheckCircle2 className="h-4 w-4 mr-2" /> Applied
                         </Button>
                       ) : (
-                        // THIS BUTTON TRIGGERS THE REASON DIALOG
                         <Button className="w-full" size="lg" onClick={handleApplyClick} disabled={submittingApp}>
                           {submittingApp ? 'Processing...' : 'Apply Now'}
                         </Button>
@@ -375,12 +440,16 @@ export default function AssignmentDetail() {
                 </CardContent>
               </Card>
 
-              {/* Quick Actions for Active Audit */}
-              {assignment.allotted_to === user?.id && (
-                 <Card>
+              {isAllottedToMe && (
+                 <Card className={!isActive ? 'opacity-60 grayscale' : ''}>
                     <CardHeader><CardTitle className="text-base">Quick Actions</CardTitle></CardHeader>
                     <CardContent className="space-y-2">
-                       <Button className="w-full justify-start" variant="outline" onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(assignment.city + ', ' + assignment.state)}`)}>
+                       <Button 
+                          className="w-full justify-start" 
+                          variant="outline" 
+                          disabled={!isActive} // Disable Nav if inactive
+                          onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(assignment.city + ', ' + assignment.state)}`)}
+                        >
                           <Navigation className="h-4 w-4 mr-2" /> Navigate to Location
                        </Button>
                     </CardContent>
@@ -392,7 +461,6 @@ export default function AssignmentDetail() {
         </Card>
       </div>
 
-      {/* --- REASON FOR INTEREST DIALOG --- */}
       <Dialog open={applyDialogOpen} onOpenChange={setApplyDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -407,7 +475,7 @@ export default function AssignmentDetail() {
                <Label htmlFor="reason">Why are you interested?</Label>
                <Textarea 
                  id="reason"
-                 placeholder="e.g., I have 3 years of experience in stock audits and have a team of 2 ready for this date..."
+                 placeholder="e.g., I have 3 years of experience in stock audits..."
                  value={interestReason}
                  onChange={(e) => setInterestReason(e.target.value)}
                  className="min-h-[120px]"
@@ -423,17 +491,11 @@ export default function AssignmentDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* --- REPORT SUBMISSION DIALOG --- */}
+      
       <Dialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Submit Audit Report</DialogTitle>
-            <DialogDescription>
-              Upload your audit report for {assignment.client_name}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 pt-4">
+          <DialogHeader><DialogTitle>Submit Report</DialogTitle></DialogHeader>
+            <div className="space-y-4 pt-4">
             <div>
               <Label className="text-sm font-medium">Completion Status</Label>
               <RadioGroup value={completionStatus} onValueChange={setCompletionStatus} className="mt-2 space-y-2">
@@ -453,37 +515,11 @@ export default function AssignmentDetail() {
                 </div>
               </RadioGroup>
             </div>
-
             {completionStatus === 'incomplete' && (
-              <div>
-                <Label className="text-sm font-medium">Reason for Incomplete</Label>
-                <Textarea
-                  value={incompleteReason}
-                  onChange={(e) => setIncompleteReason(e.target.value)}
-                  placeholder="Explain why the audit is incomplete..."
-                  className="mt-2"
-                />
-              </div>
+              <div><Label className="text-sm font-medium">Reason for Incomplete</Label><Textarea value={incompleteReason} onChange={(e) => setIncompleteReason(e.target.value)} placeholder="Explain..." className="mt-2"/></div>
             )}
-
-            <div>
-              <Label className="text-sm font-medium">Upload Report (PDF/DOC)</Label>
-              <input
-                type="file"
-                accept=".pdf,.doc,.docx"
-                onChange={(e) => setSelectedReportFile(e.target.files?.[0] || null)}
-                className="mt-2 w-full text-sm border rounded-lg p-2 cursor-pointer"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleReportSubmit} disabled={uploadingReport || !selectedReportFile}>
-                {uploadingReport ? 'Uploading...' : 'Submit Report'}
-              </Button>
-            </div>
+            <div><Label className="text-sm font-medium">Upload Report</Label><input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setSelectedReportFile(e.target.files?.[0] || null)} className="mt-2 w-full text-sm border rounded-lg p-2 cursor-pointer"/></div>
+            <div className="flex justify-end gap-2 pt-4"><Button variant="outline" onClick={() => setReportDialogOpen(false)}>Cancel</Button><Button onClick={handleReportSubmit} disabled={uploadingReport || !selectedReportFile}>{uploadingReport ? 'Uploading...' : 'Submit Report'}</Button></div>
           </div>
         </DialogContent>
       </Dialog>

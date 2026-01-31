@@ -30,10 +30,13 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { Search, Shield, UserCog } from "lucide-react";
+import { Search, Shield, UserCog, Eye, Mail, Phone, MapPin, Briefcase, Calendar } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 type Role = "admin" | "auditor" | "client" | "none";
 
@@ -50,10 +53,17 @@ export function UserRoleManagement() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<Role | "all">("all");
+  
+  // Role Change State
   const [selectedUser, setSelectedUser] = useState<UserRow | null>(null);
   const [newRole, setNewRole] = useState<Role>("none");
   const [showRoleDialog, setShowRoleDialog] = useState(false);
   const [updating, setUpdating] = useState(false);
+
+  // Profile View State
+  const [viewProfileOpen, setViewProfileOpen] = useState(false);
+  const [detailedProfile, setDetailedProfile] = useState<any>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -63,7 +73,6 @@ export function UserRoleManagement() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // ✅ Single source of truth for roles: profiles.role
       const { data, error } = await supabase
         .from("profiles")
         .select("id, email, full_name, role, created_at")
@@ -97,7 +106,6 @@ export function UserRoleManagement() {
 
     setUpdating(true);
     try {
-      // ✅ Update role directly in profiles table
       const { error } = await supabase
         .from("profiles")
         .update({ role: targetRole === "none" ? null : targetRole })
@@ -105,14 +113,12 @@ export function UserRoleManagement() {
 
       if (error) throw error;
 
-      // Optional: if changing to auditor, ensure auditor profile exists
       if (targetRole === "auditor") {
         const { error: upsertErr } = await supabase
           .from("auditor_profiles")
           .upsert({ user_id: selectedUser.id }, { onConflict: "user_id" });
 
         if (upsertErr) {
-          // not blocking (role update already done), but helpful to know
           console.warn("auditor_profiles upsert warning:", upsertErr);
         }
       }
@@ -121,7 +127,6 @@ export function UserRoleManagement() {
         `Role updated to ${targetRole} for ${selectedUser.full_name || selectedUser.email || "user"}`
       );
 
-      // Optimistic UI update
       setUsers((prev) =>
         prev.map((u) =>
           u.id === selectedUser.id ? { ...u, role: targetRole } : u
@@ -136,6 +141,63 @@ export function UserRoleManagement() {
       toast.error("Failed to update role");
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const handleViewProfile = async (user: UserRow) => {
+    setViewProfileOpen(true);
+    setLoadingProfile(true);
+    setDetailedProfile(null);
+
+    try {
+      // 1. Fetch Basic Profile Data
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+      
+      if (profileError) throw profileError;
+
+      let mergedData = { ...profileData, role: user.role, photoUrl: null };
+
+      // 2. If Auditor, fetch professional details & Photo
+      if (user.role === 'auditor') {
+        const { data: auditorData } = await supabase
+          .from('auditor_profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        
+        if (auditorData) {
+          mergedData = { ...mergedData, auditorInfo: auditorData };
+
+          // 3. Handle Profile Photo Signing
+          if (auditorData.profile_photo_url) {
+            const path = auditorData.profile_photo_url;
+            if (path.startsWith('http') || path.startsWith('https')) {
+              mergedData.photoUrl = path;
+            } else {
+              // Sign private URL
+              const { data: signed } = await supabase.storage
+                .from('kyc-documents')
+                .createSignedUrl(path, 3600); // 1 hour valid
+              
+              if (signed?.signedUrl) {
+                mergedData.photoUrl = signed.signedUrl;
+              }
+            }
+          }
+        }
+      }
+
+      setDetailedProfile(mergedData);
+
+    } catch (error: any) {
+      console.error("Error fetching details:", error);
+      toast.error("Could not load full profile");
+    } finally {
+      setLoadingProfile(false);
     }
   };
 
@@ -250,17 +312,31 @@ export function UserRoleManagement() {
                         : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUser(u);
-                          setNewRole(u.role ?? "none");
-                          setShowRoleDialog(true);
-                        }}
-                      >
-                        <UserCog className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        {/* View Profile Button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleViewProfile(u)}
+                          title="View Profile"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        
+                        {/* Change Role Button */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUser(u);
+                            setNewRole(u.role ?? "none");
+                            setShowRoleDialog(true);
+                          }}
+                          title="Change Role"
+                        >
+                          <UserCog className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -311,6 +387,116 @@ export function UserRoleManagement() {
                 {updating ? "Updating..." : "Update Role"}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Profile Dialog */}
+        <Dialog open={viewProfileOpen} onOpenChange={setViewProfileOpen}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>User Profile</DialogTitle>
+            </DialogHeader>
+            
+            {loadingProfile ? (
+              <div className="py-8 text-center text-muted-foreground">Loading details...</div>
+            ) : detailedProfile ? (
+              <div className="space-y-6 pt-2">
+                {/* Header Section */}
+                <div className="flex items-center gap-4 bg-muted/20 p-4 rounded-lg">
+                  <Avatar className="h-16 w-16 border-2 border-primary/20">
+                    <AvatarImage src={detailedProfile.photoUrl || ''} className="object-cover" />
+                    <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
+                      {detailedProfile.full_name?.charAt(0) || 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                  
+                  <div>
+                    <h3 className="text-xl font-bold">{detailedProfile.full_name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant={getRoleBadgeVariant(detailedProfile.role)}>
+                        {detailedProfile.role}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        Joined {new Date(detailedProfile.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Contact Details */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-1">
+                      <Mail className="h-3 w-3" /> Email
+                    </span>
+                    <div className="text-sm">{detailedProfile.email}</div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> Phone
+                    </span>
+                    <div className="text-sm">{detailedProfile.phone || "N/A"}</div>
+                  </div>
+                </div>
+
+                {/* Auditor Specific Details */}
+                {detailedProfile.role === 'auditor' && detailedProfile.auditorInfo && (
+                  <>
+                    <Separator />
+                    <div className="space-y-4">
+                      <h4 className="font-semibold flex items-center gap-2">
+                        <Briefcase className="h-4 w-4" /> Professional Details
+                      </h4>
+                      
+                      <div className="grid grid-cols-2 gap-4 bg-card border rounded-md p-4">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Base Location</div>
+                          <div className="flex items-center gap-1 font-medium mt-1">
+                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                            {detailedProfile.auditorInfo.base_city}, {detailedProfile.auditorInfo.base_state}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Experience</div>
+                          <div className="font-medium mt-1">
+                            {detailedProfile.auditorInfo.experience_years} Years
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <div className="text-xs text-muted-foreground">Qualifications</div>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {detailedProfile.auditorInfo.qualifications?.map((q: string) => (
+                              <Badge key={q} variant="secondary" className="text-xs">{q}</Badge>
+                            )) || <span className="text-sm text-muted-foreground">None listed</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="border p-3 rounded bg-muted/10">
+                          <div className="text-xs text-muted-foreground uppercase font-bold">PAN Number</div>
+                          <div className="font-mono text-sm mt-1">{detailedProfile.auditorInfo.pan_card || "N/A"}</div>
+                        </div>
+                        <div className="border p-3 rounded bg-muted/10">
+                          <div className="text-xs text-muted-foreground uppercase font-bold">KYC Status</div>
+                          <div className="mt-1">
+                            <Badge variant={detailedProfile.auditorInfo.kyc_status === 'approved' ? 'default' : 'outline'}>
+                              {detailedProfile.auditorInfo.kyc_status || 'Pending'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-4 text-destructive">User details not found</div>
+            )}
+            
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setViewProfileOpen(false)}>Close</Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </CardContent>
