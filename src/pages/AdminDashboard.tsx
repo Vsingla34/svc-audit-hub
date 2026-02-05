@@ -762,7 +762,6 @@ export default function AdminDashboard() {
       <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
         <DialogContent><DialogHeader><DialogTitle>Rate Auditor</DialogTitle></DialogHeader><div className="flex justify-center gap-2 py-4">{[1, 2, 3, 4, 5].map((r) => (<button key={r} onClick={() => setTempRating(r)}><Star className={`h-10 w-10 ${r <= tempRating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} /></button>))}</div><DialogFooter><Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button></DialogFooter></DialogContent>
       </Dialog>
-
     </DashboardLayout>
   );
 }

@@ -33,6 +33,7 @@ import {
   Menu,
   ChevronRight,
   Landmark,
+  Radio,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -113,25 +114,26 @@ function AppSidebar({
   };
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0 bg-sidebar">
-      <SidebarContent className="pt-6 px-3">
+    // UPDATED: bg-[#4338CA]
+    <Sidebar collapsible="icon" className="border-r-0 bg-[#4338CA] text-white" variant="sidebar">
+      <SidebarContent className="pt-6 px-3 bg-[#4338CA]">
         <div className={cn(
           "flex items-center gap-3 px-2 mb-8 transition-all duration-300",
           collapsed ? "justify-center" : "justify-start"
         )}>
-          <Avatar className="h-10 w-10 border-2 border-sidebar-primary/20">
+          <Avatar className="h-10 w-10 border-2 border-white/20">
             <AvatarImage src={avatarUrl || ''} alt={fullName} className="object-cover" />
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
+            <AvatarFallback className="bg-white/10 text-white font-semibold">
               {getInitials(fullName)}
             </AvatarFallback>
           </Avatar>
           
           {!collapsed && (
             <div className="flex flex-col overflow-hidden">
-              <span className="font-heading text-sm font-semibold text-sidebar-foreground truncate">
+              <span className="font-heading text-sm font-semibold text-white truncate">
                 {fullName}
               </span>
-              <span className="text-xs text-sidebar-foreground/60 truncate" title={user?.email}>
+              <span className="text-xs text-white/60 truncate" title={user?.email}>
                 {user?.email}
               </span>
             </div>
@@ -140,7 +142,7 @@ function AppSidebar({
 
         <SidebarGroup>
           <SidebarGroupLabel className={cn(
-            "text-sidebar-foreground/50 text-xs font-medium uppercase tracking-wider mb-2",
+            "text-white/50 text-xs font-medium uppercase tracking-wider mb-2",
             collapsed && "sr-only"
           )}>
             Menu
@@ -161,20 +163,24 @@ function AppSidebar({
                           onTabChange(item.title.toLowerCase().replace(/\s+/g, '-'));
                         }
                       }}
-                      isActive={isActive}
                       tooltip={item.title}
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                        "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent",
-                        isActive && "bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+                        "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
+                        // Default state: White Text
+                        "text-white",
+                        // Hover state: White BG, Purple Text (#4338CA)
+                        "hover:bg-white hover:text-[#4338CA]",
+                        // Active state: White BG, Purple Text
+                        isActive && "bg-white text-[#4338CA] font-semibold shadow-sm hover:bg-white hover:text-[#4338CA]"
                       )}
                     >
-                      <item.icon className="h-4.5 w-4.5 shrink-0" />
-                      <span className={cn("text-sm font-medium flex-1", collapsed && "sr-only")}>
+                      <item.icon className="h-4.5 w-4.5 shrink-0 transition-colors" />
+                      
+                      <span className={cn("text-sm flex-1", collapsed && "sr-only")}>
                         {item.title}
                       </span>
                       {!collapsed && isActive && (
-                        <ChevronRight className="h-4 w-4 opacity-60" />
+                        <ChevronRight className="h-4 w-4 text-[#4338CA]/60" />
                       )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -192,11 +198,11 @@ function AppSidebar({
                   onClick={signOut}
                   tooltip="Sign Out"
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                    "text-sidebar-foreground/50 hover:text-destructive hover:bg-destructive/10"
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group",
+                    "text-white/70 hover:bg-red-500 hover:text-white"
                   )}
                 >
-                  <LogOut className="h-4.5 w-4.5 shrink-0" />
+                  <LogOut className="h-4.5 w-4.5 shrink-0 transition-colors" />
                   <span className={cn("text-sm font-medium", collapsed && "sr-only")}>Sign Out</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -217,7 +223,6 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const { userRole, isProfileComplete } = useAuth();
 
-  // If Auditor AND Profile Incomplete, ONLY show "My Profile"
   const filteredNavItems = (userRole === 'auditor' && !isProfileComplete)
     ? navItems.filter(item => item.href === '/profile-setup') 
     : navItems;
@@ -255,7 +260,6 @@ export function DashboardLayout({
   );
 }
 
-// UPDATED: "Auditors" removed from Admin list
 export const adminNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
   { title: 'Assignments', icon: Briefcase, href: '/dashboard?tab=assignments' },
@@ -270,6 +274,7 @@ export const adminNavItems: NavItem[] = [
 
 export const auditorNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
+  { title: 'Live Report', icon: Radio, href: '/dashboard?tab=live-report' },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Bank & KYC', icon: Landmark, href: '/bank-kyc' },
   { title: 'Available Jobs', icon: Briefcase, href: '/dashboard?tab=available-jobs' },

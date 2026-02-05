@@ -9,9 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { z } from 'zod';
-import { Shield, ArrowLeft, Phone, Mail, User, Lock, KeyRound } from 'lucide-react';
+import { Shield, ArrowLeft, Phone, Mail, User, Lock, KeyRound, Loader2 } from 'lucide-react';
 
-// --- Validation Schemas ---
+// --- Validation Schemas (Kept the same) ---
 const emailSchema = z.string().trim().email('Please enter a valid email address').max(255);
 const passwordSchema = z.string().min(8, 'Password must be at least 8 characters');
 const fullNameSchema = z.string().trim().min(2, 'Name must be at least 2 characters');
@@ -61,7 +61,6 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      // 1. Sign Up
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password: password,
@@ -75,14 +74,12 @@ export default function Auth() {
 
       if (error) throw error;
 
-      // Handle "Auto-Confirm" edge case (if settings are wrong)
       if (data.session) {
         toast.success("Account created! Logging you in...");
-        navigate('/dashboard'); // Direct login if verification is OFF in Supabase
+        navigate('/dashboard'); 
         return;
       }
 
-      // Check if user is already confirmed but trying to sign up again
       if (data.user && data.user.identities && data.user.identities.length === 0) {
         toast.error("This email is already registered. Please sign in.");
         return;
@@ -105,7 +102,6 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      // 2. Verify Email OTP
       const { error: verifyError } = await supabase.auth.verifyOtp({
         email: email.trim(),
         token: otp.trim(),
@@ -115,7 +111,6 @@ export default function Auth() {
       if (verifyError) throw verifyError;
 
       toast.success('Account verified and created successfully!');
-      // Navigation is handled by the useEffect auth listener
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Invalid OTP or Verification Failed");
@@ -152,33 +147,50 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-background via-background to-primary/5">
-      <header className="p-6">
-        <Button variant="ghost" onClick={() => navigate('/')} className="gap-2 hover:bg-primary/10">
+    <div className="min-h-screen flex flex-col bg-gray-50 relative overflow-hidden">
+      {/* --- New Indigo Background Decor --- */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
+          <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-[#4338CA]/10 blur-3xl" />
+          <div className="absolute bottom-[10%] right-[10%] w-[30%] h-[30%] rounded-full bg-[#4338CA]/10 blur-3xl" />
+      </div>
+
+      <header className="p-6 z-10">
+        <Button variant="ghost" onClick={() => navigate('/')} className="gap-2 hover:bg-[#4338CA]/10 text-[#4338CA]">
           <ArrowLeft className="h-4 w-4" />
           Back to Home
         </Button>
       </header>
 
-      <main className="flex-1 flex items-center justify-center p-6">
+      <main className="flex-1 flex items-center justify-center p-6 z-10">
         <div className="w-full max-w-md">
           <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/25">
-              <Shield className="h-8 w-8 text-primary-foreground" />
+            {/* Logo updated to Indigo */}
+            <div className="h-14 w-14 rounded-2xl bg-[#4338CA] flex items-center justify-center shadow-lg shadow-[#4338CA]/25">
+              <Shield className="h-8 w-8 text-white" />
             </div>
-            <span className="font-heading text-3xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">AuditHub</span>
+            <span className="font-heading text-3xl font-bold text-[#4338CA]">AuditHub</span>
           </div>
 
-          <Card className="border-0 shadow-xl bg-card/80 backdrop-blur-sm transition-all duration-300">
+          <Card className="border-t-4 border-t-[#4338CA] shadow-xl bg-white/90 backdrop-blur-sm">
             <CardHeader className="space-y-1 pb-4">
-              <CardTitle className="text-2xl font-bold text-center">Welcome</CardTitle>
+              <CardTitle className="text-2xl font-bold text-center text-gray-900">Welcome</CardTitle>
               <CardDescription className="text-center">Sign in to manage your audits</CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">
                 <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50">
-                  <TabsTrigger value="signin">Sign In</TabsTrigger>
-                  <TabsTrigger value="signup">Sign Up</TabsTrigger>
+                  <TabsTrigger 
+                    value="signin"
+                    className="data-[state=active]:bg-white data-[state=active]:text-[#4338CA] data-[state=active]:shadow-sm"
+                  >
+                    Sign In
+                  </TabsTrigger>
+                  <TabsTrigger 
+                    value="signup"
+                    className="data-[state=active]:bg-white data-[state=active]:text-[#4338CA] data-[state=active]:shadow-sm"
+                  >
+                    Sign Up
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="signin" className="mt-0">
@@ -191,7 +203,7 @@ export default function Auth() {
                           id="signin-email" 
                           type="email" 
                           placeholder="your@email.com" 
-                          className={`pl-9 ${errors.email ? 'border-destructive' : ''}`}
+                          className={`pl-9 focus-visible:ring-[#4338CA] ${errors.email ? 'border-destructive' : ''}`}
                           value={email} 
                           onChange={(e) => setEmail(e.target.value)} 
                           required
@@ -206,14 +218,16 @@ export default function Auth() {
                           id="signin-password" 
                           type="password" 
                           placeholder="••••••••" 
-                          className="pl-9" 
+                          className="pl-9 focus-visible:ring-[#4338CA]" 
                           value={password} 
                           onChange={(e) => setPassword(e.target.value)} 
                           required 
                         />
                       </div>
                     </div>
-                    <Button type="submit" className="w-full" size="lg" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</Button>
+                    <Button type="submit" className="w-full bg-[#4338CA] hover:bg-[#4338CA]/90" size="lg" disabled={loading}>
+                      {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : 'Sign In'}
+                    </Button>
                   </form>
                 </TabsContent>
 
@@ -230,7 +244,7 @@ export default function Auth() {
                             id="signup-name" 
                             value={fullName} 
                             onChange={(e) => setFullName(e.target.value)} 
-                            className={`pl-9 ${errors.fullName ? 'border-destructive' : ''}`} 
+                            className={`pl-9 focus-visible:ring-[#4338CA] ${errors.fullName ? 'border-destructive' : ''}`} 
                             placeholder="John Doe" 
                           />
                         </div>
@@ -246,7 +260,7 @@ export default function Auth() {
                             type="tel" 
                             value={phone} 
                             onChange={(e) => setPhone(e.target.value)} 
-                            className={`pl-9 ${errors.phone ? 'border-destructive' : ''}`} 
+                            className={`pl-9 focus-visible:ring-[#4338CA] ${errors.phone ? 'border-destructive' : ''}`} 
                             placeholder="9876543210" 
                           />
                         </div>
@@ -262,7 +276,7 @@ export default function Auth() {
                             type="email" 
                             value={email} 
                             onChange={(e) => setEmail(e.target.value)} 
-                            className={`pl-9 ${errors.email ? 'border-destructive' : ''}`} 
+                            className={`pl-9 focus-visible:ring-[#4338CA] ${errors.email ? 'border-destructive' : ''}`} 
                             placeholder="john@example.com" 
                           />
                         </div>
@@ -278,7 +292,7 @@ export default function Auth() {
                             type="password" 
                             value={password} 
                             onChange={(e) => setPassword(e.target.value)} 
-                            className={`pl-9 ${errors.password ? 'border-destructive' : ''}`} 
+                            className={`pl-9 focus-visible:ring-[#4338CA] ${errors.password ? 'border-destructive' : ''}`} 
                             placeholder="Create a password" 
                           />
                         </div>
@@ -291,7 +305,7 @@ export default function Auth() {
                       <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
                         <div className="text-center space-y-1 mb-4">
                           <p className="text-sm font-medium">Enter 6-digit code sent to {email}</p>
-                          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => setIsOtpSent(false)} type="button">Change Email</Button>
+                          <Button variant="link" size="sm" className="h-auto p-0 text-xs text-[#4338CA]" onClick={() => setIsOtpSent(false)} type="button">Change Email</Button>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="otp">One-Time Password</Label>
@@ -301,7 +315,7 @@ export default function Auth() {
                               id="otp" 
                               value={otp} 
                               onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} 
-                              className={`pl-9 text-center tracking-widest text-lg ${errors.otp ? 'border-destructive' : ''}`} 
+                              className={`pl-9 text-center tracking-widest text-lg focus-visible:ring-[#4338CA] ${errors.otp ? 'border-destructive' : ''}`} 
                               placeholder="000000" 
                               maxLength={6}
                             />
@@ -311,9 +325,9 @@ export default function Auth() {
                       </div>
                     )}
 
-                    <Button type="submit" className="w-full" size="lg" disabled={loading}>
+                    <Button type="submit" className="w-full bg-[#4338CA] hover:bg-[#4338CA]/90" size="lg" disabled={loading}>
                       {loading 
-                        ? (isOtpSent ? 'Verifying...' : 'Sending OTP...') 
+                        ? (isOtpSent ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Verifying...</> : <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Sending...</>) 
                         : (isOtpSent ? 'Verify & Create Account' : 'Send OTP & Sign Up')
                       }
                     </Button>
