@@ -168,13 +168,15 @@ export default function Auth() {
             <div className="h-14 w-14 rounded-2xl bg-[#4338CA] flex items-center justify-center shadow-lg shadow-[#4338CA]/25">
               <Shield className="h-8 w-8 text-white" />
             </div>
-            <span className="font-heading text-3xl font-bold text-[#4338CA]">AuditHub</span>
+            {/* Name Change: AuditHub -> StockCheck360 */}
+            <span className="font-heading text-3xl font-bold text-[#4338CA]">StockCheck360</span>
           </div>
 
           <Card className="border-t-4 border-t-[#4338CA] shadow-xl bg-white/90 backdrop-blur-sm">
             <CardHeader className="space-y-1 pb-4">
               <CardTitle className="text-2xl font-bold text-center text-gray-900">Welcome</CardTitle>
-              <CardDescription className="text-center">Sign in to manage your audits</CardDescription>
+              {/* Text Change: "Sign in to manage your audits" -> "Sign in to manage your account" */}
+              <CardDescription className="text-center">Sign in to manage your account</CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs value={activeTab} onValueChange={onTabChange} className="w-full">

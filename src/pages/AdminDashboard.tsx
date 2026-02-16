@@ -3,7 +3,6 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,6 +14,7 @@ import { CreateAssignmentDialog } from '@/components/CreateAssignmentDialog';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AssignmentSearchExport } from '@/components/AssignmentSearchExport';
+import { AssignmentFilters } from '@/components/AssignmentFilters'; // Imported Filters
 import { UserRoleManagement } from '@/components/UserRoleManagement';
 import { DeadlineReminders } from '@/components/DeadlineReminders';
 import { ReportsManagement } from '@/components/ReportsManagement';
@@ -57,13 +57,21 @@ export default function AdminDashboard() {
   
   const [tempRating, setTempRating] = useState(0);
   const [rejectionReason, setRejectionReason] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
   
+  // --- Search & Filter States ---
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterState, setFilterState] = useState<string>('all');
+  const [filterCity, setFilterCity] = useState<string>('all');
+  const [filterAuditType, setFilterAuditType] = useState<string>('all');
+  const [filterDateFrom, setFilterDateFrom] = useState<string>('');
+  const [filterDateTo, setFilterDateTo] = useState<string>('');
+  
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
 
   useEffect(() => { fetchData(); }, []);
 
+  // ... (Keep existing image fetching useEffect) ...
   useEffect(() => {
     const fetchImage = async () => {
       if (viewingApplication && auditorDetails[viewingApplication.auditor_id]) {
@@ -93,7 +101,6 @@ export default function AdminDashboard() {
       setApplicantPhotoUrl(null);
     }
   }, [viewingApplication, appDetailOpen, auditorDetails]);
-
 
   const handleTabChange = (tab: string) => setSearchParams({ tab });
 
@@ -153,6 +160,76 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- Derived Filter Options ---
+  const uniqueStates = useMemo(() => {
+    const s = new Set(assignments.map(a => a.state).filter(Boolean));
+    return Array.from(s).sort();
+  }, [assignments]);
+
+  const uniqueCities = useMemo(() => {
+    const c = new Set(assignments.map(a => a.city).filter(Boolean));
+    return Array.from(c).sort();
+  }, [assignments]);
+
+  const uniqueAuditTypes = useMemo(() => {
+    const t = new Set(assignments.map(a => a.audit_type).filter(Boolean));
+    return Array.from(t).sort();
+  }, [assignments]);
+
+  // --- Filter Logic ---
+  const filteredAssignments = useMemo(() => {
+    return assignments.filter(a => {
+      // 1. Text Search
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const match = 
+          a.client_name?.toLowerCase().includes(q) ||
+          a.branch_name?.toLowerCase().includes(q) ||
+          a.city?.toLowerCase().includes(q) ||
+          a.state?.toLowerCase().includes(q) ||
+          a.audit_type?.toLowerCase().includes(q) ||
+          a.assignment_number?.toLowerCase().includes(q);
+        
+        if (!match) return false;
+      }
+
+      // 2. Dropdown Filters
+      if (filterStatus !== 'all' && a.status !== filterStatus) return false;
+      if (filterState !== 'all' && a.state !== filterState) return false;
+      if (filterCity !== 'all' && a.city !== filterCity) return false;
+      if (filterAuditType !== 'all' && a.audit_type !== filterAuditType) return false;
+
+      // 3. Date Filters
+      if (filterDateFrom) {
+        if (new Date(a.audit_date) < new Date(filterDateFrom)) return false;
+      }
+      if (filterDateTo) {
+        if (new Date(a.audit_date) > new Date(filterDateTo)) return false;
+      }
+
+      return true;
+    });
+  }, [assignments, searchQuery, filterStatus, filterState, filterCity, filterAuditType, filterDateFrom, filterDateTo]);
+
+  const handleFilterChange = (filters: any) => {
+    if (filters.status !== undefined) setFilterStatus(filters.status);
+    if (filters.state !== undefined) setFilterState(filters.state);
+    if (filters.city !== undefined) setFilterCity(filters.city);
+    if (filters.auditType !== undefined) setFilterAuditType(filters.auditType);
+    if (filters.dateFrom !== undefined) setFilterDateFrom(filters.dateFrom);
+    if (filters.dateTo !== undefined) setFilterDateTo(filters.dateTo);
+  };
+
+  const handleResetFilters = () => {
+    setFilterStatus('all');
+    setFilterState('all');
+    setFilterCity('all');
+    setFilterAuditType('all');
+    setFilterDateFrom('');
+    setFilterDateTo('');
+    setSearchQuery('');
   };
 
   const groupedApplications = useMemo(() => {
@@ -219,26 +296,21 @@ export default function AdminDashboard() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  // --- REALLOCATION LOGIC START ---
+  // --- REALLOCATION LOGIC ---
   const handleOpenReallocate = async (assignmentId: string) => {
     setSelectedAssignmentForRealloc(assignmentId);
     setReallocationList([]);
     setReallocateDialogOpen(true);
 
     try {
-      // 1. Fetch ALL applications for this assignment (including rejected ones)
       const { data: apps, error } = await supabase
         .from('applications')
-        .select(`
-          *, 
-          auditor:profiles(full_name, email, phone)
-        `)
+        .select(`*, auditor:profiles(full_name, email, phone)`)
         .eq('assignment_id', assignmentId);
 
       if (error) throw error;
       if (!apps) return;
 
-      // 2. Fetch Full Auditor Profiles
       const auditorIds = apps.map(a => a.auditor_id);
       const { data: profiles } = await supabase
         .from('auditor_profiles')
@@ -247,9 +319,7 @@ export default function AdminDashboard() {
       
       if (profiles) {
         const newDetailsMap: Record<string, any> = {};
-        profiles.forEach(profile => { 
-          newDetailsMap[profile.user_id] = profile;
-        });
+        profiles.forEach(profile => { newDetailsMap[profile.user_id] = profile; });
         setAuditorDetails(prev => ({ ...prev, ...newDetailsMap }));
       }
       
@@ -263,7 +333,6 @@ export default function AdminDashboard() {
       });
 
       setReallocationList(mergedList);
-
     } catch (error: any) {
       toast.error('Failed to load applicants');
     }
@@ -271,7 +340,6 @@ export default function AdminDashboard() {
 
   const confirmReallocation = async (applicationId: string, newAuditorId: string) => {
     if (!selectedAssignmentForRealloc) return;
-    
     if (!confirm("Confirm re-allocation? This will notify the new auditor.")) return;
 
     try {
@@ -282,15 +350,8 @@ export default function AdminDashboard() {
 
       if (assignError) throw assignError;
 
-      await supabase
-        .from('applications')
-        .update({ status: 'rejected' })
-        .eq('assignment_id', selectedAssignmentForRealloc);
-
-      await supabase
-        .from('applications')
-        .update({ status: 'accepted' })
-        .eq('id', applicationId);
+      await supabase.from('applications').update({ status: 'rejected' }).eq('assignment_id', selectedAssignmentForRealloc);
+      await supabase.from('applications').update({ status: 'accepted' }).eq('id', applicationId);
 
       await supabase.from('notifications').insert({
         user_id: newAuditorId,
@@ -303,12 +364,10 @@ export default function AdminDashboard() {
       toast.success('Auditor changed successfully');
       setReallocateDialogOpen(false);
       fetchData();
-
     } catch (error: any) {
       toast.error(error.message);
     }
   };
-  // --- REALLOCATION LOGIC END ---
 
   const handleDeleteApplication = async (applicationId: string) => {
     if (!confirm('Are you sure you want to reject this application?')) return;
@@ -336,20 +395,12 @@ export default function AdminDashboard() {
       } else {
         toast.error("Could not generate download link");
       }
-    } catch(e:any) { 
-      toast.error(e.message); 
-    } 
+    } catch(e:any) { toast.error(e.message); } 
   };
 
   const handleDeleteAssignment = async (id: string) => { if(confirm('Delete?')) { await supabase.from('assignments').delete().eq('id', id); fetchData(); } };
   const submitRating = async () => { if(selectedAssignmentForRating && tempRating > 0) { await supabase.from('assignments').update({ status: 'completed', auditor_rating: tempRating, completed_at: new Date().toISOString() }).eq('id', selectedAssignmentForRating); setRatingDialogOpen(false); fetchData(); toast.success('Rated!'); } };
   const openViewDetails = (p: any) => { setViewingKycProfile(p); setKycDetailOpen(true); };
-
-  const filteredAssignments = assignments.filter(a => {
-    if (filterStatus !== 'all' && a.status !== filterStatus) return false;
-    if (searchQuery) return a.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) || a.city?.toLowerCase().includes(searchQuery.toLowerCase());
-    return true;
-  });
   const toggleAssignmentSelection = (id: string) => setSelectedAssignments(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedAssignments(selectedAssignments.length === filteredAssignments.length ? [] : filteredAssignments.map(a => a.id));
 
@@ -374,6 +425,21 @@ export default function AdminDashboard() {
             <CreateAssignmentDialog onAssignmentCreated={fetchData} />
             <BulkUploadDialog userId={user?.id || ''} onSuccess={fetchData} />
           </div>
+
+          {/* New Filters Component */}
+          <AssignmentFilters 
+            filterStatus={filterStatus}
+            filterState={filterState}
+            filterCity={filterCity}
+            filterAuditType={filterAuditType}
+            filterDateFrom={filterDateFrom}
+            filterDateTo={filterDateTo}
+            onFilterChange={handleFilterChange}
+            onReset={handleResetFilters}
+            states={uniqueStates}
+            cities={uniqueCities}
+            auditTypes={uniqueAuditTypes}
+          />
           
           <AssignmentSearchExport assignments={filteredAssignments} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
           
@@ -385,6 +451,7 @@ export default function AdminDashboard() {
                     <TableHead className="w-10"><Checkbox checked={selectedAssignments.length > 0 && selectedAssignments.length === filteredAssignments.length} onCheckedChange={toggleSelectAll} /></TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Location</TableHead>
+                    <TableHead>Audit Type</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
@@ -394,8 +461,12 @@ export default function AdminDashboard() {
                   {filteredAssignments.map(a => (
                     <TableRow key={a.id}>
                       <TableCell><Checkbox checked={selectedAssignments.includes(a.id)} onCheckedChange={() => toggleAssignmentSelection(a.id)} /></TableCell>
-                      <TableCell>{a.client_name} - {a.branch_name}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{a.client_name}</div>
+                        <div className="text-xs text-muted-foreground">{a.branch_name}</div>
+                      </TableCell>
                       <TableCell>{a.city}, {a.state}</TableCell>
+                      <TableCell><Badge variant="outline">{a.audit_type}</Badge></TableCell>
                       <TableCell>{new Date(a.audit_date).toLocaleDateString()}</TableCell>
                       <TableCell><StatusBadge status={a.status} /></TableCell>
                       <TableCell>
@@ -417,6 +488,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* ... (Keep Applications tab) ... */}
       {activeTab === 'applications' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -436,7 +508,7 @@ export default function AdminDashboard() {
                       <CardDescription className="flex items-center gap-2 mt-1">
                         <MapPin className="h-3 w-3" /> {group.assignment.city}, {group.assignment.state}
                         <span className="text-muted-foreground/30">•</span>
-                        <span>ID: {group.assignment.assignment_number || 'N/A'}</span>
+                        <span>{group.assignment.audit_type}</span>
                       </CardDescription>
                     </div>
                     <Badge variant="outline" className="bg-background">{group.applicants.length} Applicants</Badge>
@@ -492,7 +564,8 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* --- REALLOCATION DIALOG --- */}
+      {/* ... (Keep rest of the file: Reallocation Dialog, Deadlines, Reports, User Roles, Dialogs) ... */}
+      {/* ... (Reallocation Dialog) ... */}
       <Dialog open={reallocateDialogOpen} onOpenChange={setReallocateDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -552,9 +625,7 @@ export default function AdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* --- END REALLOCATION DIALOG --- */}
-
-      {/* ... (Keep existing KYC Approvals, Deadlines, etc.) ... */}
+      
       {activeTab === 'kyc-approvals' && (
         <Card>
           <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
@@ -573,6 +644,7 @@ export default function AdminDashboard() {
       {activeTab === 'reports' && <ReportsManagement />}
       {activeTab === 'user-roles' && <UserRoleManagement />}
 
+      {/* Application Detail Dialog */}
       <Dialog open={appDetailOpen} onOpenChange={setAppDetailOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -711,6 +783,7 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
       
+      {/* KYC Profile Detail Dialog */}
       <Dialog open={kycDetailOpen} onOpenChange={setKycDetailOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Auditor Profile</DialogTitle></DialogHeader>
@@ -748,6 +821,7 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* Rejection Dialog */}
       <Dialog open={rejectionDialogOpen} onOpenChange={setRejectionDialogOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Reject Application</DialogTitle></DialogHeader>
@@ -759,6 +833,7 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* Rating Dialog */}
       <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
         <DialogContent><DialogHeader><DialogTitle>Rate Auditor</DialogTitle></DialogHeader><div className="flex justify-center gap-2 py-4">{[1, 2, 3, 4, 5].map((r) => (<button key={r} onClick={() => setTempRating(r)}><Star className={`h-10 w-10 ${r <= tempRating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} /></button>))}</div><DialogFooter><Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button></DialogFooter></DialogContent>
       </Dialog>

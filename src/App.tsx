@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
-import Index from "./pages/Index";
+import Index from "./pages/Index"; // You can remove this if you no longer use the Index page anywhere
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import AuditorProfileSetup from "./pages/AuditorProfileSetup";
@@ -42,11 +42,6 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/profile-setup" replace />;
   }
 
-  // 3. (Optional) Prevent completed profiles from going back to setup if you want
-  // if (userRole === 'auditor' && isProfileComplete && location.pathname === '/profile-setup') {
-  //   return <Navigate to="/dashboard" replace />;
-  // }
-
   return <>{children}</>;
 };
 
@@ -59,8 +54,8 @@ function App() {
         <BrowserRouter>
           <AuthProvider>
             <Routes>
-              {/* Public Route */}
-              <Route path="/" element={<Index />} />
+              {/* Public Route - CHANGED: Redirect root to /auth */}
+              <Route path="/" element={<Navigate to="/auth" replace />} />
               <Route path="/auth" element={<Auth />} />
 
               {/* Protected Routes */}
