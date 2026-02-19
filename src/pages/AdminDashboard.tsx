@@ -8,13 +8,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation, Repeat } from 'lucide-react';
+import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation, Repeat, Pencil, Trash2 } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { CreateAssignmentDialog } from '@/components/CreateAssignmentDialog';
+import { EditAssignmentDialog } from '@/components/EditAssignmentDialog'; 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AssignmentSearchExport } from '@/components/AssignmentSearchExport';
-import { AssignmentFilters } from '@/components/AssignmentFilters'; // Imported Filters
+import { AssignmentFilters } from '@/components/AssignmentFilters';
 import { UserRoleManagement } from '@/components/UserRoleManagement';
 import { DeadlineReminders } from '@/components/DeadlineReminders';
 import { ReportsManagement } from '@/components/ReportsManagement';
@@ -43,7 +44,9 @@ export default function AdminDashboard() {
   const [appDetailOpen, setAppDetailOpen] = useState(false);
   const [rejectionDialogOpen, setRejectionDialogOpen] = useState(false);
   
-  // Reallocation State
+  // Edit & Reallocation State
+  const [editingAssignment, setEditingAssignment] = useState<any>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [reallocateDialogOpen, setReallocateDialogOpen] = useState(false);
   const [reallocationList, setReallocationList] = useState<any[]>([]);
   const [selectedAssignmentForRealloc, setSelectedAssignmentForRealloc] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export default function AdminDashboard() {
   const [tempRating, setTempRating] = useState(0);
   const [rejectionReason, setRejectionReason] = useState('');
   
-  // --- Search & Filter States ---
+  // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterState, setFilterState] = useState<string>('all');
@@ -71,7 +74,6 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // ... (Keep existing image fetching useEffect) ...
   useEffect(() => {
     const fetchImage = async () => {
       if (viewingApplication && auditorDetails[viewingApplication.auditor_id]) {
@@ -162,7 +164,6 @@ export default function AdminDashboard() {
     }
   };
 
-  // --- Derived Filter Options ---
   const uniqueStates = useMemo(() => {
     const s = new Set(assignments.map(a => a.state).filter(Boolean));
     return Array.from(s).sort();
@@ -178,10 +179,8 @@ export default function AdminDashboard() {
     return Array.from(t).sort();
   }, [assignments]);
 
-  // --- Filter Logic ---
   const filteredAssignments = useMemo(() => {
     return assignments.filter(a => {
-      // 1. Text Search
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const match = 
@@ -195,19 +194,13 @@ export default function AdminDashboard() {
         if (!match) return false;
       }
 
-      // 2. Dropdown Filters
       if (filterStatus !== 'all' && a.status !== filterStatus) return false;
       if (filterState !== 'all' && a.state !== filterState) return false;
       if (filterCity !== 'all' && a.city !== filterCity) return false;
       if (filterAuditType !== 'all' && a.audit_type !== filterAuditType) return false;
 
-      // 3. Date Filters
-      if (filterDateFrom) {
-        if (new Date(a.audit_date) < new Date(filterDateFrom)) return false;
-      }
-      if (filterDateTo) {
-        if (new Date(a.audit_date) > new Date(filterDateTo)) return false;
-      }
+      if (filterDateFrom && new Date(a.audit_date) < new Date(filterDateFrom)) return false;
+      if (filterDateTo && new Date(a.audit_date) > new Date(filterDateTo)) return false;
 
       return true;
     });
@@ -237,10 +230,7 @@ export default function AdminDashboard() {
     applications.forEach(app => {
       const assignId = app.assignment_id;
       if (!grouped[assignId]) {
-        grouped[assignId] = {
-          assignment: app.assignment,
-          applicants: []
-        };
+        grouped[assignId] = { assignment: app.assignment, applicants: [] };
       }
       grouped[assignId].applicants.push(app);
     });
@@ -248,6 +238,11 @@ export default function AdminDashboard() {
   }, [applications]);
 
   const openApplicationDetail = (app: any) => { setViewingApplication(app); setAppDetailOpen(true); };
+
+  const handleEditAssignment = (assignment: any) => {
+    setEditingAssignment(assignment);
+    setEditDialogOpen(true);
+  };
 
   const handleAllotAssignment = async (applicationId: string, assignmentId: string, auditorId: string) => {
     try {
@@ -267,15 +262,10 @@ export default function AdminDashboard() {
         read: false
       });
 
-      const { data: rejectedApps } = await supabase
-        .from('applications')
-        .select('id, auditor_id')
-        .eq('assignment_id', assignmentId)
-        .neq('id', applicationId);
+      const { data: rejectedApps } = await supabase.from('applications').select('id, auditor_id').eq('assignment_id', assignmentId).neq('id', applicationId);
 
       if (rejectedApps && rejectedApps.length > 0) {
         const rejectedIds = rejectedApps.map(a => a.id);
-        
         await supabase.from('applications').update({ status: 'rejected' }).in('id', rejectedIds);
 
         const notifications = rejectedApps.map(app => ({
@@ -286,7 +276,6 @@ export default function AdminDashboard() {
           related_assignment_id: assignmentId,
           read: false
         }));
-        
         await supabase.from('notifications').insert(notifications);
       }
 
@@ -296,7 +285,6 @@ export default function AdminDashboard() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  // --- REALLOCATION LOGIC ---
   const handleOpenReallocate = async (assignmentId: string) => {
     setSelectedAssignmentForRealloc(assignmentId);
     setReallocationList([]);
@@ -380,7 +368,15 @@ export default function AdminDashboard() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  const handleKycApproval = async (uid: string, status: string, reason?: string) => { try { await supabase.from('auditor_profiles').update({ kyc_status: status, rejection_reason: reason || null }).eq('user_id', uid); toast.success(`KYC ${status}`); setKycDetailOpen(false); setRejectionDialogOpen(false); fetchData(); } catch (err: any) { toast.error(err.message); } };
+  const handleKycApproval = async (uid: string, status: string, reason?: string) => { 
+    try { 
+      await supabase.from('auditor_profiles').update({ kyc_status: status, rejection_reason: reason || null }).eq('user_id', uid); 
+      toast.success(`KYC ${status}`); 
+      setKycDetailOpen(false); 
+      setRejectionDialogOpen(false); 
+      fetchData(); 
+    } catch (err: any) { toast.error(err.message); } 
+  };
   
   const handleDownloadResume = async (path: string) => { 
     if(!path) return; 
@@ -398,8 +394,22 @@ export default function AdminDashboard() {
     } catch(e:any) { toast.error(e.message); } 
   };
 
-  const handleDeleteAssignment = async (id: string) => { if(confirm('Delete?')) { await supabase.from('assignments').delete().eq('id', id); fetchData(); } };
-  const submitRating = async () => { if(selectedAssignmentForRating && tempRating > 0) { await supabase.from('assignments').update({ status: 'completed', auditor_rating: tempRating, completed_at: new Date().toISOString() }).eq('id', selectedAssignmentForRating); setRatingDialogOpen(false); fetchData(); toast.success('Rated!'); } };
+  const handleDeleteAssignment = async (id: string) => { 
+    if(confirm('Delete?')) { 
+      await supabase.from('assignments').delete().eq('id', id); 
+      fetchData(); 
+    } 
+  };
+  
+  const submitRating = async () => { 
+    if(selectedAssignmentForRating && tempRating > 0) { 
+      await supabase.from('assignments').update({ status: 'completed', auditor_rating: tempRating, completed_at: new Date().toISOString() }).eq('id', selectedAssignmentForRating); 
+      setRatingDialogOpen(false); 
+      fetchData(); 
+      toast.success('Rated!'); 
+    } 
+  };
+  
   const openViewDetails = (p: any) => { setViewingKycProfile(p); setKycDetailOpen(true); };
   const toggleAssignmentSelection = (id: string) => setSelectedAssignments(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedAssignments(selectedAssignments.length === filteredAssignments.length ? [] : filteredAssignments.map(a => a.id));
@@ -426,7 +436,6 @@ export default function AdminDashboard() {
             <BulkUploadDialog userId={user?.id || ''} onSuccess={fetchData} />
           </div>
 
-          {/* New Filters Component */}
           <AssignmentFilters 
             filterStatus={filterStatus}
             filterState={filterState}
@@ -471,12 +480,19 @@ export default function AdminDashboard() {
                       <TableCell><StatusBadge status={a.status} /></TableCell>
                       <TableCell>
                         <div className="flex gap-2">
-                          <Button size="sm" variant="destructive" onClick={() => handleDeleteAssignment(a.id)}>Delete</Button>
+                          <Button size="icon" variant="ghost" onClick={() => handleEditAssignment(a)} title="Edit Assignment">
+                            <Pencil className="h-4 w-4 text-blue-600" />
+                          </Button>
+                          
                           {a.status === 'allotted' && (
-                            <Button size="sm" variant="outline" onClick={() => handleOpenReallocate(a.id)}>
-                              <Repeat className="h-3 w-3 mr-1" /> Change
+                            <Button size="icon" variant="ghost" onClick={() => handleOpenReallocate(a.id)} title="Re-allocate">
+                              <Repeat className="h-4 w-4 text-amber-600" />
                             </Button>
                           )}
+                          
+                          <Button size="icon" variant="ghost" onClick={() => handleDeleteAssignment(a.id)} title="Delete Assignment">
+                             <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -488,7 +504,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ... (Keep Applications tab) ... */}
       {activeTab === 'applications' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -564,8 +579,27 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ... (Keep rest of the file: Reallocation Dialog, Deadlines, Reports, User Roles, Dialogs) ... */}
-      {/* ... (Reallocation Dialog) ... */}
+      {activeTab === 'kyc-approvals' && (
+        <Card>
+          <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
+          <CardContent>
+            {pendingKyc.length === 0 ? <p className="text-center py-8 text-muted-foreground">No pending KYC</p> : (
+              <Table>
+                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Location</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
+                <TableBody>{pendingKyc.map(kyc => (<TableRow key={kyc.id}><TableCell>{kyc.profiles?.full_name}</TableCell><TableCell>{kyc.base_city}</TableCell><TableCell><Button size="sm" onClick={() => openViewDetails(kyc)}><Eye className="h-4 w-4 mr-1"/> View</Button></TableCell></TableRow>))}</TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'deadlines' && <DeadlineReminders />}
+      {activeTab === 'reports' && <ReportsManagement />}
+      {activeTab === 'user-roles' && <UserRoleManagement />}
+
+      {/* --- DIALOGS --- */}
+      
+      {/* Reallocate Assignment Dialog */}
       <Dialog open={reallocateDialogOpen} onOpenChange={setReallocateDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -625,24 +659,6 @@ export default function AdminDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      
-      {activeTab === 'kyc-approvals' && (
-        <Card>
-          <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
-          <CardContent>
-            {pendingKyc.length === 0 ? <p className="text-center py-8 text-muted-foreground">No pending KYC</p> : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Location</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
-                <TableBody>{pendingKyc.map(kyc => (<TableRow key={kyc.id}><TableCell>{kyc.profiles?.full_name}</TableCell><TableCell>{kyc.base_city}</TableCell><TableCell><Button size="sm" onClick={() => openViewDetails(kyc)}><Eye className="h-4 w-4 mr-1"/> View</Button></TableCell></TableRow>))}</TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === 'deadlines' && <DeadlineReminders />}
-      {activeTab === 'reports' && <ReportsManagement />}
-      {activeTab === 'user-roles' && <UserRoleManagement />}
 
       {/* Application Detail Dialog */}
       <Dialog open={appDetailOpen} onOpenChange={setAppDetailOpen}>
@@ -833,10 +849,31 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Rating Dialog */}
+      {/* General Rating Dialog */}
       <Dialog open={ratingDialogOpen} onOpenChange={setRatingDialogOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Rate Auditor</DialogTitle></DialogHeader><div className="flex justify-center gap-2 py-4">{[1, 2, 3, 4, 5].map((r) => (<button key={r} onClick={() => setTempRating(r)}><Star className={`h-10 w-10 ${r <= tempRating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} /></button>))}</div><DialogFooter><Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button></DialogFooter></DialogContent>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Rate Auditor</DialogTitle></DialogHeader>
+          <div className="flex justify-center gap-2 py-4">
+            {[1, 2, 3, 4, 5].map((r) => (
+              <button key={r} onClick={() => setTempRating(r)}>
+                <Star className={`h-10 w-10 ${r <= tempRating ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} />
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={submitRating} disabled={tempRating === 0}>Complete</Button>
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
+
+      {/* Edit Assignment Dialog */}
+      <EditAssignmentDialog 
+        assignment={editingAssignment}
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        onSuccess={fetchData}
+      />
+      
     </DashboardLayout>
   );
 }
