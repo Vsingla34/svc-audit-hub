@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users, Smartphone, Laptop, Bike } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,6 +25,7 @@ const INDIAN_STATES = [
 ];
 
 const COMPETENCIES_LIST = [
+  "Assets Verification", "Stock Audits", // <-- NEWLY ADDED COMPETENCIES
   "Accounting & Bookkeeping", "Financial Reporting & Finalization", "MIS Reporting & Dashboards",
   "Accounts Payable (AP) Management", "Accounts Receivable (AR) Management", "Bank Reconciliation & Cash Management",
   "Fixed Assets Accounting & FAR Management", "Inventory Accounting & Valuation", "Costing & Management Accounting",
@@ -63,7 +64,10 @@ export default function AuditorProfileSetup() {
     has_manpower: false,
     manpower_count: 0,
     competencies: [] as string[],
-    core_competency: ''
+    core_competency: '',
+    has_smartphone: false, // <-- NEW
+    has_laptop: false,     // <-- NEW
+    has_bike: false        // <-- NEW
   });
 
   const [qualificationInput, setQualificationInput] = useState('');
@@ -99,7 +103,10 @@ export default function AuditorProfileSetup() {
         has_manpower: data.has_manpower || false,
         manpower_count: data.manpower_count || 0,
         competencies: data.competencies || [],
-        core_competency: data.core_competency || ''
+        core_competency: data.core_competency || '',
+        has_smartphone: data.has_smartphone || false,
+        has_laptop: data.has_laptop || false,
+        has_bike: data.has_bike || false
       });
     }
   };
@@ -177,12 +184,15 @@ export default function AuditorProfileSetup() {
   const handleSaveDraft = async () => {
     if (!user) return;
     setSavingDraft(true);
+    
     const { error } = await supabase.from('auditor_profiles').upsert({
       user_id: user.id,
       ...formData,
       kyc_status: kycStatus === 'approved' || kycStatus === 'pending' ? 'pending' : 'draft', 
-    });
+    }, { onConflict: 'user_id' });
+    
     setSavingDraft(false);
+    
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
@@ -195,8 +205,13 @@ export default function AuditorProfileSetup() {
     e.preventDefault();
     if (!user) return;
 
+    // --- Validation ---
+    if (!formData.resume_url) {
+      toast({ title: 'Resume Required', description: 'You must upload a resume before submitting.', variant: 'destructive' });
+      return;
+    }
     if (!formData.base_city || !formData.base_state || !formData.address) {
-      toast({ title: 'Incomplete profile', description: 'Fill all required fields (Address, City, State)', variant: 'destructive' });
+      toast({ title: 'Incomplete profile', description: 'Fill all required location fields (Address, City, State)', variant: 'destructive' });
       return;
     }
     if (formData.competencies.length === 0 || !formData.core_competency) {
@@ -205,11 +220,13 @@ export default function AuditorProfileSetup() {
     }
 
     setLoading(true);
+    
     const { error } = await supabase.from('auditor_profiles').upsert({
       user_id: user.id,
       ...formData,
       kyc_status: 'pending',
-    });
+    }, { onConflict: 'user_id' });
+    
     setLoading(false);
 
     if (error) {
@@ -293,27 +310,48 @@ export default function AuditorProfileSetup() {
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50"><Briefcase className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Professional Info</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <Label>Experience (Years)</Label>
+                    <Label>Experience (Years) *</Label>
                     <Input type="text" inputMode="numeric" value={formData.experience_years} onChange={e => setFormData({...formData, experience_years: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0})} disabled={!isEditable} required />
                   </div>
-                  {/* PAN Card removed as requested */}
                   <div>
                     <Label>GST Number</Label>
                     <Input value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value.toUpperCase()})} disabled={!isEditable} />
                   </div>
                   <div>
-                    <Label>Resume (PDF)</Label>
+                    <Label className="font-bold">Resume (PDF) *</Label>
                     <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable} />
-                    {formData.resume_url && <span className="text-xs text-green-600">✓ Resume Uploaded</span>}
+                    {formData.resume_url ? 
+                        <span className="text-xs text-green-600">✓ Resume Uploaded</span> 
+                        : <span className="text-xs text-destructive">Required for approval</span>
+                    }
                   </div>
                 </div>
               </div>
 
-              {/* Manpower & Competencies (NEW) */}
+              {/* Manpower, Assets & Competencies */}
               <div className="space-y-4">
-                 <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Capabilities</h3>
+                 <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Capabilities & Assets</h3>
                  
-                 <div className="flex items-center gap-4 p-4 border rounded bg-muted/20">
+                 {/* Asset Checkboxes */}
+                 <div className="p-4 border rounded bg-muted/10">
+                    <Label className="text-base mb-3 block">Assets Availability</Label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                       <div className="flex items-center space-x-2">
+                         <Checkbox id="smartphone" checked={formData.has_smartphone} onCheckedChange={(c) => isEditable && setFormData({...formData, has_smartphone: !!c})} disabled={!isEditable} />
+                         <label htmlFor="smartphone" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-1"><Smartphone className="h-4 w-4 text-muted-foreground"/> Smartphone</label>
+                       </div>
+                       <div className="flex items-center space-x-2">
+                         <Checkbox id="laptop" checked={formData.has_laptop} onCheckedChange={(c) => isEditable && setFormData({...formData, has_laptop: !!c})} disabled={!isEditable} />
+                         <label htmlFor="laptop" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-1"><Laptop className="h-4 w-4 text-muted-foreground"/> Laptop</label>
+                       </div>
+                       <div className="flex items-center space-x-2">
+                         <Checkbox id="bike" checked={formData.has_bike} onCheckedChange={(c) => isEditable && setFormData({...formData, has_bike: !!c})} disabled={!isEditable} />
+                         <label htmlFor="bike" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-1"><Bike className="h-4 w-4 text-muted-foreground"/> Two-Wheeler (Bike)</label>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="flex items-center gap-4 p-4 border rounded bg-muted/20 mt-2">
                     <Label>Manpower Availability?</Label>
                     <Switch checked={formData.has_manpower} onCheckedChange={c => isEditable && setFormData({...formData, has_manpower: c})} disabled={!isEditable} />
                     {formData.has_manpower && (
@@ -322,12 +360,12 @@ export default function AuditorProfileSetup() {
                  </div>
 
                  <div>
-                    <Label className="mb-2 block">Competencies (Max 5)</Label>
-                    <div className="h-48 overflow-y-auto border rounded p-4 grid grid-cols-1 md:grid-cols-2 gap-2 bg-muted/10">
+                    <Label className="mb-2 block">Competencies (Max 5) *</Label>
+                    <div className="h-48 overflow-y-auto border rounded p-4 grid grid-cols-1 md:grid-cols-2 gap-2 bg-muted/5">
                       {COMPETENCIES_LIST.map(comp => (
-                        <div key={comp} className="flex items-center gap-2">
-                          <Checkbox id={comp} checked={formData.competencies.includes(comp)} onCheckedChange={() => isEditable && handleCompetencyToggle(comp)} disabled={!isEditable} />
-                          <label htmlFor={comp} className="text-sm cursor-pointer">{comp}</label>
+                        <div key={comp} className="flex items-start gap-2">
+                          <Checkbox className="mt-1" id={comp} checked={formData.competencies.includes(comp)} onCheckedChange={() => isEditable && handleCompetencyToggle(comp)} disabled={!isEditable} />
+                          <label htmlFor={comp} className="text-sm cursor-pointer leading-tight">{comp}</label>
                         </div>
                       ))}
                     </div>
@@ -355,20 +393,20 @@ export default function AuditorProfileSetup() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <Label>Base City *</Label>
-                    <Input value={formData.base_city} onChange={e => setFormData({...formData, base_city: e.target.value})} disabled={!isEditable} required />
+                     <Label>Base State *</Label>
+                     <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formData.base_state} onChange={e => setFormData({...formData, base_state: e.target.value})} disabled={!isEditable} required>
+                       <option value="">Select State</option>
+                       {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                     </select>
                   </div>
                   <div>
-                    <Label>Base State *</Label>
-                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formData.base_state} onChange={e => setFormData({...formData, base_state: e.target.value})} disabled={!isEditable} required>
-                      <option value="">Select State</option>
-                      {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <Label>Base City *</Label>
+                    <Input value={formData.base_city} onChange={e => setFormData({...formData, base_city: e.target.value})} disabled={!isEditable} required />
                   </div>
                 </div>
                 
                 <div>
-                  <Label>Willing to Travel (km radius)</Label>
+                  <Label>Willing to Travel (km radius) *</Label>
                   <Input type="text" inputMode="numeric" className="max-w-xs" value={formData.willing_to_travel_radius} onChange={e => setFormData({...formData, willing_to_travel_radius: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0})} disabled={!isEditable} required />
                 </div>
 
@@ -389,7 +427,7 @@ export default function AuditorProfileSetup() {
                 <div className="flex gap-4 pt-4">
                   {isEditing && <Button type="button" variant="ghost" className="flex-1" onClick={() => {setIsEditing(false); loadProfile();}}>Cancel</Button>}
                   <Button type="button" variant="outline" className="flex-1" onClick={handleSaveDraft} disabled={savingDraft || loading}>Save Draft</Button>
-                  <Button type="submit" className="flex-1" disabled={loading}>Submit</Button>
+                  <Button type="submit" className="flex-1 bg-primary" disabled={loading}>Submit for KYC</Button>
                 </div>
               )}
             </form>

@@ -9,9 +9,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { z } from 'zod';
-import { Shield, ArrowLeft, Phone, Mail, User, Lock, KeyRound, Loader2 } from 'lucide-react';
+import { Shield, Phone, Mail, User, Lock, KeyRound, Loader2 } from 'lucide-react';
 
-// --- Validation Schemas (Kept the same) ---
+// --- Validation Schemas ---
 const emailSchema = z.string().trim().email('Please enter a valid email address').max(255);
 const passwordSchema = z.string().min(8, 'Password must be at least 8 characters');
 const fullNameSchema = z.string().trim().min(2, 'Name must be at least 2 characters');
@@ -154,28 +154,18 @@ export default function Auth() {
           <div className="absolute bottom-[10%] right-[10%] w-[30%] h-[30%] rounded-full bg-[#4338CA]/10 blur-3xl" />
       </div>
 
-      <header className="p-6 z-10">
-        <Button variant="ghost" onClick={() => navigate('/')} className="gap-2 hover:bg-[#4338CA]/10 text-[#4338CA]">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Home
-        </Button>
-      </header>
-
       <main className="flex-1 flex items-center justify-center p-6 z-10">
         <div className="w-full max-w-md">
           <div className="flex items-center justify-center gap-3 mb-8">
-            {/* Logo updated to Indigo */}
             <div className="h-14 w-14 rounded-2xl bg-[#4338CA] flex items-center justify-center shadow-lg shadow-[#4338CA]/25">
               <Shield className="h-8 w-8 text-white" />
             </div>
-            {/* Name Change: AuditHub -> StockCheck360 */}
             <span className="font-heading text-3xl font-bold text-[#4338CA]">StockCheck360</span>
           </div>
 
           <Card className="border-t-4 border-t-[#4338CA] shadow-xl bg-white/90 backdrop-blur-sm">
             <CardHeader className="space-y-1 pb-4">
               <CardTitle className="text-2xl font-bold text-center text-gray-900">Welcome</CardTitle>
-              {/* Text Change: "Sign in to manage your audits" -> "Sign in to manage your account" */}
               <CardDescription className="text-center">Sign in to manage your account</CardDescription>
             </CardHeader>
             <CardContent>

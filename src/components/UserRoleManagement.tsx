@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -49,7 +50,10 @@ import {
   FileText, 
   Download,
   Filter,
-  X 
+  X,
+  Users,
+  Navigation,
+  GraduationCap
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
@@ -62,6 +66,14 @@ interface AuditorProfile {
   base_state: string | null;
   experience_years: number | null;
   qualifications: string[] | null;
+  competencies: string[] | null;
+  core_competency: string | null;
+  preferred_states: string[] | null;
+  willing_to_travel_radius: number | null;
+  has_manpower: boolean | null;
+  manpower_count: number | null;
+  address: string | null;
+  gst_number: string | null;
   rating: number | null;
   profile_photo_url: string | null;
   resume_url: string | null;
@@ -108,46 +120,23 @@ export function UserRoleManagement() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // Fetch profiles
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, email, full_name, phone, created_at")
-        .order("created_at", { ascending: false });
-
-      if (profilesError) throw profilesError;
-
-      // Fetch user roles
+      // 1. Fetch user roles mapping
       const { data: roles, error: rolesError } = await supabase
         .from("user_roles")
         .select("user_id, role");
-
+        
       if (rolesError) throw rolesError;
 
-      // Fetch auditor profiles
+      // 2. Fetch all auditor profiles for their details
       const { data: auditorProfiles, error: auditorError } = await supabase
         .from("auditor_profiles")
         .select("*");
-
+        
       if (auditorError) throw auditorError;
 
-      // Map data
+      // 3. Map the data together
       const roleMap = new Map(roles?.map(r => [r.user_id, r.role]));
       const auditorMap = new Map(auditorProfiles?.map(ap => [ap.user_id, ap]));
-
-      const mapped: UserRow[] = profiles?.map((p: any) => ({
-        id: p.id,
-        email: p.email ?? "",
-        full_name: p.full_name ?? "",
-        phone: p.phone ?? null,
-        role: (roleMap.get(p.id) as Role) ?? "none", // Assuming default is 'none' if no role found
-        created_at: p.created_at,
-        auditor_profile: auditorMap.get(p.id) || null,
-      })) ?? [];
-
-      // Update roles from profiles table if user_roles table is empty or not used directly for 'role' column in profiles
-      // The previous implementation used 'role' column from 'profiles' table directly. Let's stick to that if available.
-      // Checking previous implementation: .select("id, email, full_name, role, created_at")
-      // It seems 'role' IS on the profiles table in the previous implementation. Let's use that to be safe.
       
       const { data: profilesWithRole, error: profilesWithRoleError } = await supabase
           .from("profiles")
@@ -156,7 +145,7 @@ export function UserRoleManagement() {
           
       if (profilesWithRoleError) throw profilesWithRoleError;
 
-      const betterMapped: UserRow[] = profilesWithRole?.map((p: any) => ({
+      const mapped: UserRow[] = profilesWithRole?.map((p: any) => ({
           id: p.id,
           email: p.email ?? "",
           full_name: p.full_name ?? "",
@@ -166,7 +155,7 @@ export function UserRoleManagement() {
           auditor_profile: auditorMap.get(p.id) || null,
       })) ?? [];
 
-      setUsers(betterMapped);
+      setUsers(mapped);
     } catch (err) {
       console.error("Error fetching users:", err);
       toast.error("Failed to fetch users");
@@ -183,47 +172,27 @@ export function UserRoleManagement() {
 
     setUpdating(true);
     try {
-      // Update role in profiles table
       const { error } = await supabase
         .from("profiles")
         .update({ role: targetRole === "none" ? null : targetRole })
         .eq("id", selectedUser.id);
-
+        
       if (error) throw error;
 
-      // If switching to auditor, create an empty auditor profile if it doesn't exist
       if (targetRole === "auditor") {
-        const { error: upsertErr } = await supabase
-          .from("auditor_profiles")
-          .upsert({ user_id: selectedUser.id }, { onConflict: "user_id" });
-
-        if (upsertErr) {
-          console.warn("auditor_profiles upsert warning:", upsertErr);
-        }
+        await supabase.from("auditor_profiles").upsert({ user_id: selectedUser.id }, { onConflict: "user_id" });
       }
 
-      toast.success(
-        `Role updated to ${targetRole} for ${selectedUser.full_name || selectedUser.email || "user"}`
-      );
-
-      // Optimistic update
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === selectedUser.id ? { ...u, role: targetRole } : u
-        )
-      );
-
+      toast.success(`Role updated to ${targetRole}`);
+      
+      setUsers((prev) => prev.map((u) => u.id === selectedUser.id ? { ...u, role: targetRole } : u));
+      
       setShowRoleDialog(false);
       setSelectedUser(null);
       setNewRole("none");
       
-      // Refresh to get new auditor profile if needed
-      if (targetRole === 'auditor') {
-          fetchUsers();
-      }
-
+      if (targetRole === 'auditor') fetchUsers();
     } catch (err) {
-      console.error("Error updating role:", err);
       toast.error("Failed to update role");
     } finally {
       setUpdating(false);
@@ -236,16 +205,14 @@ export function UserRoleManagement() {
     setProfilePhotoUrl(null);
     setResumeUrl(null);
 
-    // Fetch signed URLs if they exist
+    // Fetch Signed URLs for Documents and Photos so they can be viewed
     if (user.auditor_profile) {
       if (user.auditor_profile.profile_photo_url) {
         const path = user.auditor_profile.profile_photo_url;
         if (path.startsWith('http')) {
           setProfilePhotoUrl(path);
         } else {
-          const { data } = await supabase.storage
-            .from('kyc-documents')
-            .createSignedUrl(path, 3600);
+          const { data } = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600);
           if (data?.signedUrl) setProfilePhotoUrl(data.signedUrl);
         }
       }
@@ -255,27 +222,21 @@ export function UserRoleManagement() {
           if (path.startsWith('http')) {
             setResumeUrl(path);
           } else {
-            const { data } = await supabase.storage
-              .from('kyc-documents')
-              .createSignedUrl(path, 3600);
+            const { data } = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600);
             if (data?.signedUrl) setResumeUrl(data.signedUrl);
           }
       }
     }
   };
 
-  // Get unique states for filter
+  // Generate unique states for dropdowns
   const uniqueStates = useMemo(() => {
     const states = new Set<string>();
-    users.forEach(u => {
-      if (u.auditor_profile?.base_state) {
-        states.add(u.auditor_profile.base_state);
-      }
-    });
+    users.forEach(u => { if (u.auditor_profile?.base_state) states.add(u.auditor_profile.base_state); });
     return Array.from(states).sort();
   }, [users]);
 
-  // Filter Logic
+  // Handle Search and Filter Logic
   const filteredUsers = users.filter((u) => {
     const name = (u.full_name || "").toLowerCase();
     const email = (u.email || "").toLowerCase();
@@ -313,13 +274,7 @@ export function UserRoleManagement() {
     setRatingFilter("all");
   };
 
-  if (loading) {
-    return (
-      <div className="text-center py-8 text-muted-foreground animate-pulse">
-        Loading users and profiles...
-      </div>
-    );
-  }
+  if (loading) return <div className="text-center py-8 text-muted-foreground animate-pulse">Loading users and profiles...</div>;
 
   return (
     <Card className="w-full">
@@ -332,32 +287,20 @@ export function UserRoleManagement() {
               <CardDescription>Manage user roles, view details, and monitor performance</CardDescription>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchUsers} title="Refresh List">
-            Refresh
-          </Button>
+          <Button variant="outline" size="sm" onClick={fetchUsers} title="Refresh List">Refresh</Button>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Advanced Filters */}
+        {/* Filters Section */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search name, email, state..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
+            <Input placeholder="Search name, email, state..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
           </div>
 
           <Select value={roleFilter} onValueChange={(v) => setRoleFilter(v as any)}>
-            <SelectTrigger>
-              <div className="flex items-center gap-2">
-                <UserCog className="h-4 w-4 text-muted-foreground" />
-                <SelectValue placeholder="Role" />
-              </div>
-            </SelectTrigger>
+            <SelectTrigger><div className="flex items-center gap-2"><UserCog className="h-4 w-4 text-muted-foreground" /><SelectValue placeholder="Role" /></div></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Roles</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
@@ -368,27 +311,15 @@ export function UserRoleManagement() {
           </Select>
 
           <Select value={stateFilter} onValueChange={setStateFilter}>
-            <SelectTrigger>
-               <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground" />
-                <SelectValue placeholder="State" />
-              </div>
-            </SelectTrigger>
+            <SelectTrigger><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-muted-foreground" /><SelectValue placeholder="State" /></div></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All States</SelectItem>
-              {uniqueStates.map(state => (
-                <SelectItem key={state} value={state}>{state}</SelectItem>
-              ))}
+              {uniqueStates.map(state => <SelectItem key={state} value={state}>{state}</SelectItem>)}
             </SelectContent>
           </Select>
 
           <Select value={ratingFilter} onValueChange={setRatingFilter}>
-            <SelectTrigger>
-               <div className="flex items-center gap-2">
-                <Star className="h-4 w-4 text-muted-foreground" />
-                <SelectValue placeholder="Rating" />
-              </div>
-            </SelectTrigger>
+            <SelectTrigger><div className="flex items-center gap-2"><Star className="h-4 w-4 text-muted-foreground" /><SelectValue placeholder="Rating" /></div></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Ratings</SelectItem>
               <SelectItem value="4+">4.0 & Up</SelectItem>
@@ -400,9 +331,7 @@ export function UserRoleManagement() {
         
         {(searchQuery || roleFilter !== "all" || stateFilter !== "all" || ratingFilter !== "all") && (
              <div className="flex justify-end">
-                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground h-8">
-                    <X className="h-3 w-3 mr-1" /> Clear Filters
-                </Button>
+                <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground h-8"><X className="h-3 w-3 mr-1" /> Clear Filters</Button>
              </div>
         )}
 
@@ -422,79 +351,27 @@ export function UserRoleManagement() {
 
             <TableBody>
               {filteredUsers.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center text-muted-foreground py-12"
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                        <Filter className="h-8 w-8 text-muted-foreground/50" />
-                        <p>No users found matching your filters</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-12"><div className="flex flex-col items-center gap-2"><Filter className="h-8 w-8 text-muted-foreground/50" /><p>No users found matching your filters</p></div></TableCell></TableRow>
               ) : (
                 filteredUsers.map((u) => (
                   <TableRow key={u.id}>
-                    <TableCell>
-                        <div className="flex flex-col">
-                            <span className="font-medium">{u.full_name || "—"}</span>
-                            <span className="text-xs text-muted-foreground">{u.email}</span>
-                        </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={getRoleBadgeVariant(u.role)}>
-                        {u.role}
-                      </Badge>
-                    </TableCell>
+                    <TableCell><div className="flex flex-col"><span className="font-medium">{u.full_name || "—"}</span><span className="text-xs text-muted-foreground">{u.email}</span></div></TableCell>
+                    <TableCell><Badge variant={getRoleBadgeVariant(u.role)}>{u.role}</Badge></TableCell>
                     <TableCell>
                         {u.auditor_profile?.base_state ? (
-                            <div className="flex items-center gap-1 text-sm">
-                                <MapPin className="h-3 w-3 text-muted-foreground" />
-                                {u.auditor_profile.base_city && `${u.auditor_profile.base_city}, `}{u.auditor_profile.base_state}
-                            </div>
-                        ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                        )}
+                            <div className="flex items-center gap-1 text-sm"><MapPin className="h-3 w-3 text-muted-foreground" />{u.auditor_profile.base_city && `${u.auditor_profile.base_city}, `}{u.auditor_profile.base_state}</div>
+                        ) : (<span className="text-muted-foreground text-xs">—</span>)}
                     </TableCell>
                     <TableCell>
                         {u.role === 'auditor' && u.auditor_profile?.rating ? (
-                             <div className="flex items-center gap-1">
-                                <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                <span className="font-medium">{u.auditor_profile.rating.toFixed(1)}</span>
-                             </div>
-                        ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                        )}
+                             <div className="flex items-center gap-1"><Star className="h-3 w-3 fill-yellow-400 text-yellow-400" /><span className="font-medium">{u.auditor_profile.rating.toFixed(1)}</span></div>
+                        ) : (<span className="text-muted-foreground text-xs">—</span>)}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {u.created_at
-                        ? new Date(u.created_at).toLocaleDateString()
-                        : "—"}
-                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleViewProfile(u)}
-                          title="View Full Details"
-                        >
-                          <Eye className="h-4 w-4 text-primary" />
-                        </Button>
-                        
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedUser(u);
-                            setNewRole(u.role ?? "none");
-                            setShowRoleDialog(true);
-                          }}
-                          title="Change Role"
-                        >
-                          <UserCog className="h-4 w-4 text-muted-foreground" />
-                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleViewProfile(u)} title="View Full Details"><Eye className="h-4 w-4 text-primary" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setSelectedUser(u); setNewRole(u.role ?? "none"); setShowRoleDialog(true); }} title="Change Role"><UserCog className="h-4 w-4 text-muted-foreground" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -509,27 +386,12 @@ export function UserRoleManagement() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Change User Role</DialogTitle>
-              <DialogDescription>
-                Update the role for {selectedUser?.full_name || selectedUser?.email}
-              </DialogDescription>
+              <DialogDescription>Update the role for {selectedUser?.full_name || selectedUser?.email}</DialogDescription>
             </DialogHeader>
-
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Current role:{" "}
-                  <Badge
-                    variant={getRoleBadgeVariant(selectedUser?.role || "none")}
-                  >
-                    {selectedUser?.role || "none"}
-                  </Badge>
-                </p>
-              </div>
-
+              <div className="space-y-2"><p className="text-sm text-muted-foreground">Current role:{" "}<Badge variant={getRoleBadgeVariant(selectedUser?.role || "none")}>{selectedUser?.role || "none"}</Badge></p></div>
               <Select value={newRole} onValueChange={(v) => setNewRole(v as Role)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select new role" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select new role" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Admin</SelectItem>
                   <SelectItem value="auditor">Auditor</SelectItem>
@@ -537,149 +399,182 @@ export function UserRoleManagement() {
                   <SelectItem value="none">None</SelectItem>
                 </SelectContent>
               </Select>
-
-              <Button
-                onClick={handleRoleChange}
-                disabled={updating || !selectedUser || newRole === selectedUser.role}
-                className="w-full"
-              >
-                {updating ? "Updating..." : "Update Role"}
-              </Button>
+              <Button onClick={handleRoleChange} disabled={updating || !selectedUser || newRole === selectedUser.role} className="w-full">{updating ? "Updating..." : "Update Role"}</Button>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* View Profile Dialog */}
+        {/* --- FULL VIEW PROFILE DIALOG (WITH ALL DOCUMENTS AND DETAILS) --- */}
         <Dialog open={viewProfileOpen} onOpenChange={setViewProfileOpen}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>User Profile Details</DialogTitle>
-            </DialogHeader>
-            
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle className="text-2xl">User Profile Details</DialogTitle></DialogHeader>
             {detailedProfile ? (
-              <div className="space-y-6 pt-2">
+              <div className="space-y-6 py-4">
+                
                 {/* Header Section */}
-                <div className="flex items-center gap-4 bg-muted/20 p-4 rounded-lg">
+                <div className="flex flex-col md:flex-row items-start gap-4 bg-muted/20 p-4 rounded-xl border">
                   <Avatar className="h-20 w-20 border-2 border-primary/20">
                     <AvatarImage src={profilePhotoUrl || ''} className="object-cover" />
-                    <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">
-                      {detailedProfile.full_name?.charAt(0) || 'U'}
-                    </AvatarFallback>
+                    <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">{detailedProfile.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
                   
-                  <div className="space-y-1">
-                    <h3 className="text-2xl font-bold">{detailedProfile.full_name}</h3>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={getRoleBadgeVariant(detailedProfile.role)}>
-                        {detailedProfile.role}
-                      </Badge>
-                      <span className="text-sm text-muted-foreground">
-                        Member since {new Date(detailedProfile.created_at).toLocaleDateString()}
-                      </span>
+                  <div className="space-y-2 flex-1 w-full">
+                    <div>
+                      <h3 className="text-2xl font-bold">{detailedProfile.full_name}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant={getRoleBadgeVariant(detailedProfile.role)}>{detailedProfile.role}</Badge>
+                        <span className="text-sm text-muted-foreground">Joined {new Date(detailedProfile.created_at).toLocaleDateString()}</span>
+                        {detailedProfile.auditor_profile?.rating && (
+                          <div className="flex items-center gap-1 bg-yellow-50 px-2 py-0.5 rounded text-yellow-700 border border-yellow-200 ml-2">
+                              <Star className="h-3.5 w-3.5 fill-yellow-500 text-yellow-500" />
+                              <span className="font-bold text-xs">{detailedProfile.auditor_profile.rating.toFixed(1)}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* Contact Details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1 p-3 border rounded-md bg-card">
-                    <span className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-1">
-                      <Mail className="h-3 w-3" /> Email
-                    </span>
-                    <div className="text-sm font-medium">{detailedProfile.email}</div>
-                  </div>
-                  <div className="space-y-1 p-3 border rounded-md bg-card">
-                    <span className="text-xs text-muted-foreground uppercase font-bold flex items-center gap-1">
-                      <Phone className="h-3 w-3" /> Phone
-                    </span>
-                    <div className="text-sm font-medium">{detailedProfile.phone || detailedProfile.auditor_profile?.pan_card || "N/A"}</div>
+                    <div className="flex flex-wrap items-center gap-4 text-sm mt-2">
+                       <span className="flex items-center gap-1 text-muted-foreground"><Mail className="h-4 w-4"/> {detailedProfile.email}</span>
+                       <span className="flex items-center gap-1 text-muted-foreground"><Phone className="h-4 w-4"/> {detailedProfile.phone || detailedProfile.auditor_profile?.pan_card || "N/A"}</span>
+                       {detailedProfile.auditor_profile && (
+                         <span className="flex items-center gap-1 text-muted-foreground"><MapPin className="h-4 w-4"/> {detailedProfile.auditor_profile.base_city}, {detailedProfile.auditor_profile.base_state}</span>
+                       )}
+                    </div>
                   </div>
                 </div>
 
                 {/* Auditor Specific Details */}
                 {detailedProfile.role === 'auditor' && detailedProfile.auditor_profile ? (
                   <>
-                    <Separator />
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                         <h4 className="font-semibold flex items-center gap-2">
-                            <Briefcase className="h-4 w-4 text-primary" /> Professional Profile
-                         </h4>
-                         {detailedProfile.auditor_profile.rating && (
-                             <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded text-yellow-700 border border-yellow-200">
-                                 <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
-                                 <span className="font-bold">{detailedProfile.auditor_profile.rating.toFixed(1)}</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       {/* Professional Info */}
+                       <div className="space-y-4">
+                          <h4 className="font-semibold flex items-center gap-2 border-b pb-2"><Briefcase className="h-4 w-4 text-primary" /> Professional Profile</h4>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                             <div className="bg-muted/10 p-3 rounded-lg border">
+                                <div className="text-xs text-muted-foreground uppercase font-bold">Experience</div>
+                                <div className="text-lg font-semibold">{detailedProfile.auditor_profile.experience_years || 0} Years</div>
                              </div>
-                         )}
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4 bg-muted/10 border rounded-md p-4">
-                        <div>
-                          <div className="text-xs text-muted-foreground">Base Location</div>
-                          <div className="flex items-center gap-1 font-medium mt-1">
-                            <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                            {detailedProfile.auditor_profile.base_city || "City N/A"}, {detailedProfile.auditor_profile.base_state || "State N/A"}
+                             <div className="bg-muted/10 p-3 rounded-lg border">
+                                <div className="text-xs text-muted-foreground uppercase font-bold">GST Number</div>
+                                <div className="font-medium">{detailedProfile.auditor_profile.gst_number || "N/A"}</div>
+                             </div>
+                             <div className="bg-muted/10 p-3 rounded-lg border col-span-2">
+                                <div className="text-xs text-muted-foreground uppercase font-bold">Core Competency</div>
+                                <div className="font-medium text-primary">{detailedProfile.auditor_profile.core_competency || "N/A"}</div>
+                             </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground">Experience</div>
-                          <div className="font-medium mt-1 flex items-center gap-1">
-                            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                            {detailedProfile.auditor_profile.experience_years || 0} Years
-                          </div>
-                        </div>
-                        <div className="col-span-2 mt-2">
-                          <div className="text-xs text-muted-foreground mb-1">Qualifications</div>
-                          <div className="flex flex-wrap gap-2">
-                            {detailedProfile.auditor_profile.qualifications && detailedProfile.auditor_profile.qualifications.length > 0 ? (
-                                detailedProfile.auditor_profile.qualifications.map((q: string) => (
-                                  <Badge key={q} variant="secondary" className="text-xs">{q}</Badge>
-                                ))
-                            ) : (
-                                <span className="text-sm text-muted-foreground italic">No qualifications listed</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
 
-                      {/* Documents Section */}
-                      <div className="space-y-2">
-                         <h4 className="text-sm font-semibold flex items-center gap-2 mt-2">
-                            <FileText className="h-4 w-4 text-primary" /> Documents
-                         </h4>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {resumeUrl ? (
-                                <Button variant="outline" className="w-full justify-start h-auto py-3" onClick={() => window.open(resumeUrl, '_blank')}>
-                                    <Download className="h-4 w-4 mr-2 text-primary" />
-                                    <div className="text-left">
-                                        <div className="text-sm font-medium">Download Resume</div>
-                                        <div className="text-xs text-muted-foreground">View auditor's CV</div>
-                                    </div>
-                                </Button>
-                            ) : (
-                                <div className="border border-dashed rounded p-3 text-center text-muted-foreground text-sm">
-                                    No resume uploaded
+                          <div>
+                             <Label className="flex items-center gap-2 mb-2 text-sm"><GraduationCap className="h-4 w-4"/> Qualifications</Label>
+                             <div className="flex flex-wrap gap-2">
+                                {detailedProfile.auditor_profile.qualifications?.length ? detailedProfile.auditor_profile.qualifications.map(q => <Badge key={q} variant="secondary">{q}</Badge>) : <span className="text-sm text-muted-foreground">None</span>}
+                             </div>
+                          </div>
+                          
+                          <div>
+                             <Label className="flex items-center gap-2 mb-2 text-sm"><Briefcase className="h-4 w-4"/> All Competencies</Label>
+                             <div className="flex flex-wrap gap-2">
+                                {detailedProfile.auditor_profile.competencies?.length ? detailedProfile.auditor_profile.competencies.map(c => <Badge key={c} variant="outline">{c}</Badge>) : <span className="text-sm text-muted-foreground">None</span>}
+                             </div>
+                          </div>
+                       </div>
+
+                       {/* Logistics Info */}
+                       <div className="space-y-4">
+                          <h4 className="font-semibold flex items-center gap-2 border-b pb-2"><Navigation className="h-4 w-4 text-primary" /> Logistics & Availability</h4>
+                          
+                          <div>
+                             <Label className="flex items-center gap-2 mb-2 text-sm"><Users className="h-4 w-4"/> Team Availability</Label>
+                             <div className="p-3 border rounded-md text-sm">
+                                {detailedProfile.auditor_profile.has_manpower ? (
+                                   <span className="text-green-600 font-medium flex items-center gap-2">
+                                      <Users className="h-4 w-4"/> Yes, Team of {detailedProfile.auditor_profile.manpower_count}
+                                   </span>
+                                ) : (<span className="text-muted-foreground">Individual Auditor (No Manpower)</span>)}
+                             </div>
+                          </div>
+
+                          <div>
+                             <Label className="flex items-center gap-2 mb-2 text-sm"><Navigation className="h-4 w-4"/> Travel Preferences</Label>
+                             <div className="p-3 border rounded-md text-sm space-y-2">
+                                <div className="flex justify-between">
+                                   <span className="text-muted-foreground">Travel Radius:</span>
+                                   <span className="font-medium">{detailedProfile.auditor_profile.willing_to_travel_radius || 0} km</span>
                                 </div>
-                            )}
-                            
-                            <div className="border rounded p-3 flex flex-col justify-center">
-                                <div className="text-xs text-muted-foreground uppercase font-bold">KYC Status</div>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <div className={`h-2 w-2 rounded-full ${
-                                        detailedProfile.auditor_profile.kyc_status === 'approved' ? 'bg-green-500' : 
-                                        detailedProfile.auditor_profile.kyc_status === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'
-                                    }`} />
-                                    <span className="capitalize font-medium">{detailedProfile.auditor_profile.kyc_status || 'Pending'}</span>
+                                <div className="flex justify-between items-start">
+                                   <span className="text-muted-foreground whitespace-nowrap mr-2">Preferred States:</span>
+                                   <span className="font-medium text-right flex flex-wrap justify-end gap-1">
+                                      {detailedProfile.auditor_profile.preferred_states?.length ? detailedProfile.auditor_profile.preferred_states.map(s => <Badge variant="secondary" className="text-[10px]" key={s}>{s}</Badge>) : 'None'}
+                                   </span>
                                 </div>
-                            </div>
-                         </div>
-                      </div>
+                             </div>
+                          </div>
+                          
+                          <div>
+                             <Label className="flex items-center gap-2 mb-2 text-sm"><MapPin className="h-4 w-4"/> Full Address</Label>
+                             <div className="p-3 border rounded-md text-sm text-muted-foreground bg-muted/5">
+                                {detailedProfile.auditor_profile.address || "N/A"}
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+
+                    <Separator />
+
+                    {/* Documents & KYC Section */}
+                    <div className="space-y-4">
+                       <h4 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Documents & KYC Status</h4>
+                       <div className="flex flex-col sm:flex-row gap-4">
+                          
+                          <div className="border rounded p-4 flex-1 flex flex-col justify-center items-center bg-muted/5">
+                              <div className="text-xs text-muted-foreground uppercase font-bold mb-2">KYC Status</div>
+                              <div className="flex items-center gap-2">
+                                  <div className={`h-2.5 w-2.5 rounded-full ${
+                                      detailedProfile.auditor_profile.kyc_status === 'approved' ? 'bg-green-500' : 
+                                      detailedProfile.auditor_profile.kyc_status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'
+                                  }`} />
+                                  <span className="capitalize font-bold text-lg">{detailedProfile.auditor_profile.kyc_status || 'Pending'}</span>
+                              </div>
+                          </div>
+
+                          {/* RESUME DOWNLOAD BUTTON */}
+                          {resumeUrl ? (
+                              <Button variant="outline" className="flex-1 h-auto py-4" onClick={() => window.open(resumeUrl, '_blank')}>
+                                  <Download className="h-5 w-5 mr-2 text-primary" />
+                                  <div className="text-left">
+                                      <div className="font-semibold">Download Resume</div>
+                                      <div className="text-xs text-muted-foreground">View uploaded CV</div>
+                                  </div>
+                              </Button>
+                          ) : (
+                              <div className="border border-dashed rounded p-4 flex-1 flex items-center justify-center text-muted-foreground text-sm italic">
+                                 No Resume Uploaded
+                              </div>
+                          )}
+
+                          {/* PROFILE PHOTO DOWNLOAD BUTTON */}
+                          {profilePhotoUrl ? (
+                              <Button variant="outline" className="flex-1 h-auto py-4" onClick={() => window.open(profilePhotoUrl, '_blank')}>
+                                  <Eye className="h-5 w-5 mr-2 text-primary" />
+                                  <div className="text-left">
+                                      <div className="font-semibold">View Profile Photo</div>
+                                      <div className="text-xs text-muted-foreground">View uploaded photo</div>
+                                  </div>
+                              </Button>
+                          ) : (
+                              <div className="border border-dashed rounded p-4 flex-1 flex items-center justify-center text-muted-foreground text-sm italic">
+                                 No Photo Uploaded
+                              </div>
+                          )}
+
+                       </div>
                     </div>
                   </>
                 ) : (
                     detailedProfile.role === 'auditor' && (
-                        <div className="p-4 bg-yellow-50 text-yellow-800 rounded-md border border-yellow-200 text-sm">
-                            This user has the 'Auditor' role but no auditor profile details were found. They may need to complete their profile setup.
+                        <div className="p-4 bg-amber-50 text-amber-800 rounded-md border border-amber-200 text-sm">
+                            This user has the 'Auditor' role but no auditor profile details were found. They need to complete their profile setup.
                         </div>
                     )
                 )}
@@ -688,8 +583,8 @@ export function UserRoleManagement() {
               <div className="text-center py-4 text-destructive">User details not found</div>
             )}
             
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setViewProfileOpen(false)}>Close</Button>
+            <DialogFooter className="border-t pt-4">
+              <Button variant="outline" onClick={() => setViewProfileOpen(false)}>Close Profile</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

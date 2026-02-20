@@ -8,7 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation, Repeat, Pencil, Trash2 } from 'lucide-react';
+// Added FileText to the imports below
+import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation, Repeat, Pencil, Trash2, FileText } from 'lucide-react';
 import { BulkUploadDialog } from '@/components/BulkUploadDialog';
 import { CreateAssignmentDialog } from '@/components/CreateAssignmentDialog';
 import { EditAssignmentDialog } from '@/components/EditAssignmentDialog'; 
@@ -57,6 +58,7 @@ export default function AdminDashboard() {
   const [selectedKycUser, setSelectedKycUser] = useState<string | null>(null);
   
   const [applicantPhotoUrl, setApplicantPhotoUrl] = useState<string | null>(null);
+  const [kycPhotoUrl, setKycPhotoUrl] = useState<string | null>(null);
   
   const [tempRating, setTempRating] = useState(0);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -74,35 +76,43 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchData(); }, []);
 
+  // Fetch Photo for Applications
   useEffect(() => {
-    const fetchImage = async () => {
+    const fetchAppImage = async () => {
       if (viewingApplication && auditorDetails[viewingApplication.auditor_id]) {
         const path = auditorDetails[viewingApplication.auditor_id].profile_photo_url;
         if (path) {
           if (path.startsWith('http') || path.startsWith('https')) {
             setApplicantPhotoUrl(path);
           } else {
-            const { data } = await supabase.storage
-              .from('kyc-documents')
-              .createSignedUrl(path, 3600);
-            if (data?.signedUrl) {
-              setApplicantPhotoUrl(data.signedUrl);
-            } else {
-              setApplicantPhotoUrl(null);
-            }
+            const { data } = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600);
+            setApplicantPhotoUrl(data?.signedUrl || null);
           }
         } else {
           setApplicantPhotoUrl(null);
         }
       }
     };
-    
-    if (appDetailOpen) {
-      fetchImage();
-    } else {
-      setApplicantPhotoUrl(null);
-    }
+    if (appDetailOpen) fetchAppImage(); else setApplicantPhotoUrl(null);
   }, [viewingApplication, appDetailOpen, auditorDetails]);
+
+  // Fetch Photo for KYC Details
+  useEffect(() => {
+    const fetchKycImage = async () => {
+      if (viewingKycProfile?.profile_photo_url) {
+        const path = viewingKycProfile.profile_photo_url;
+        if (path.startsWith('http') || path.startsWith('https')) {
+          setKycPhotoUrl(path);
+        } else {
+          const { data } = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600);
+          setKycPhotoUrl(data?.signedUrl || null);
+        }
+      } else {
+        setKycPhotoUrl(null);
+      }
+    };
+    if (kycDetailOpen) fetchKycImage(); else setKycPhotoUrl(null);
+  }, [viewingKycProfile, kycDetailOpen]);
 
   const handleTabChange = (tab: string) => setSearchParams({ tab });
 
@@ -395,9 +405,10 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteAssignment = async (id: string) => { 
-    if(confirm('Delete?')) { 
+    if(confirm('Are you sure you want to delete this assignment?')) { 
       await supabase.from('assignments').delete().eq('id', id); 
       fetchData(); 
+      toast.success('Assignment deleted successfully');
     } 
   };
   
@@ -581,12 +592,25 @@ export default function AdminDashboard() {
 
       {activeTab === 'kyc-approvals' && (
         <Card>
-          <CardHeader><CardTitle>Pending KYC</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Pending KYC Approvals</CardTitle></CardHeader>
           <CardContent>
-            {pendingKyc.length === 0 ? <p className="text-center py-8 text-muted-foreground">No pending KYC</p> : (
+            {pendingKyc.length === 0 ? <p className="text-center py-8 text-muted-foreground">No pending KYC applications</p> : (
               <Table>
-                <TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Location</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
-                <TableBody>{pendingKyc.map(kyc => (<TableRow key={kyc.id}><TableCell>{kyc.profiles?.full_name}</TableCell><TableCell>{kyc.base_city}</TableCell><TableCell><Button size="sm" onClick={() => openViewDetails(kyc)}><Eye className="h-4 w-4 mr-1"/> View</Button></TableCell></TableRow>))}</TableBody>
+                <TableHeader><TableRow><TableHead>Auditor Name</TableHead><TableHead>Location</TableHead><TableHead>Action</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {pendingKyc.map(kyc => (
+                    <TableRow key={kyc.id}>
+                      <TableCell className="font-medium">
+                        {kyc.profiles?.full_name}
+                        <div className="text-xs text-muted-foreground">{kyc.profiles?.email}</div>
+                      </TableCell>
+                      <TableCell>{kyc.base_city}, {kyc.base_state}</TableCell>
+                      <TableCell>
+                        <Button size="sm" onClick={() => openViewDetails(kyc)}><Eye className="h-4 w-4 mr-1"/> Review KYC</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
               </Table>
             )}
           </CardContent>
@@ -750,16 +774,25 @@ export default function AdminDashboard() {
 
                     <div>
                        <Label className="flex items-center gap-2 mb-2"><Navigation className="h-4 w-4"/> Travel & Logistics</Label>
-                       <div className="p-3 border rounded-md text-sm space-y-1">
+                       <div className="p-3 border rounded-md text-sm space-y-2">
                           <div className="flex justify-between">
                              <span className="text-muted-foreground">Travel Radius:</span>
                              <span className="font-medium">{auditorDetails[viewingApplication.auditor_id].willing_to_travel_radius} km</span>
                           </div>
-                          <div className="flex justify-between">
-                             <span className="text-muted-foreground">Preferred States:</span>
-                             <span className="font-medium text-right max-w-[200px] truncate">
+                          <div className="flex justify-between items-start">
+                             <span className="text-muted-foreground whitespace-nowrap mr-2">Preferred States:</span>
+                             <span className="font-medium text-right flex flex-wrap justify-end gap-1">
                                 {auditorDetails[viewingApplication.auditor_id].preferred_states?.join(', ') || 'None'}
                              </span>
+                          </div>
+                          
+                          <div className="border-t pt-2 mt-2">
+                             <span className="text-muted-foreground block mb-1">Available Assets:</span>
+                             <div className="flex gap-4">
+                                <span className={auditorDetails[viewingApplication.auditor_id].has_smartphone ? "text-green-600 font-medium" : "text-muted-foreground line-through opacity-50"}>Smartphone</span>
+                                <span className={auditorDetails[viewingApplication.auditor_id].has_laptop ? "text-green-600 font-medium" : "text-muted-foreground line-through opacity-50"}>Laptop</span>
+                                <span className={auditorDetails[viewingApplication.auditor_id].has_bike ? "text-green-600 font-medium" : "text-muted-foreground line-through opacity-50"}>Two-Wheeler</span>
+                             </div>
                           </div>
                        </div>
                     </div>
@@ -801,38 +834,149 @@ export default function AdminDashboard() {
       
       {/* KYC Profile Detail Dialog */}
       <Dialog open={kycDetailOpen} onOpenChange={setKycDetailOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>Auditor Profile</DialogTitle></DialogHeader>
-          {viewingKycProfile && (
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="text-2xl">Auditor Profile Review (KYC)</DialogTitle></DialogHeader>
+          {viewingKycProfile ? (
             <div className="space-y-6 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div><Label>Name</Label><div>{viewingKycProfile.profiles?.full_name}</div></div>
-                <div><Label>Email</Label><div>{viewingKycProfile.profiles?.email}</div></div>
-                <div><Label>Phone</Label><div>{viewingKycProfile.profiles?.phone || 'N/A'}</div></div>
-                <div><Label>Location</Label><div>{viewingKycProfile.base_city}, {viewingKycProfile.base_state}</div></div>
+              
+              {/* Header Info */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-muted/10 p-4 rounded-xl border">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                     <Avatar className="h-14 w-14 border-2 border-primary/20">
+                        <AvatarImage src={kycPhotoUrl || ''} className="object-cover" />
+                        <AvatarFallback className="bg-primary/10 text-primary font-bold text-xl">
+                          {viewingKycProfile.profiles?.full_name?.charAt(0) || 'U'}
+                        </AvatarFallback>
+                     </Avatar>
+                     <div>
+                        <h3 className="font-bold text-lg">{viewingKycProfile.profiles?.full_name}</h3>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <MapPin className="h-3 w-3" /> 
+                          {viewingKycProfile.base_city}, {viewingKycProfile.base_state}
+                        </div>
+                     </div>
+                  </div>
+                  
+                  <div className="space-y-1 pt-2">
+                     <div className="flex items-center gap-2 text-sm"><Mail className="h-4 w-4 text-muted-foreground"/> {viewingKycProfile.profiles?.email}</div>
+                     <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground"/> {viewingKycProfile.profiles?.phone || 'N/A'}</div>
+                     <div className="text-sm text-muted-foreground break-words mt-2 p-2 bg-background border rounded">
+                         <span className="font-semibold text-foreground">Address:</span> {viewingKycProfile.address || 'N/A'}
+                     </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                   <div className="bg-background p-3 rounded-lg border">
+                      <div className="text-xs text-muted-foreground uppercase font-bold">Experience</div>
+                      <div className="text-lg font-semibold">{viewingKycProfile.experience_years || 0} Years</div>
+                   </div>
+                   <div className="bg-background p-3 rounded-lg border">
+                      <div className="text-xs text-muted-foreground uppercase font-bold">GST Number</div>
+                      <div className="font-medium">{viewingKycProfile.gst_number || 'N/A'}</div>
+                   </div>
+                   <div className="bg-background p-3 rounded-lg border col-span-2">
+                      <div className="text-xs text-muted-foreground uppercase font-bold">Core Competency</div>
+                      <div className="font-medium text-primary">{viewingKycProfile.core_competency || 'N/A'}</div>
+                   </div>
+                </div>
               </div>
+
+              {/* Detailed Capabilities & Logistics */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="space-y-4">
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><GraduationCap className="h-4 w-4"/> Qualifications</Label>
+                       <div className="flex flex-wrap gap-2">
+                          {viewingKycProfile.qualifications?.length > 0 ? viewingKycProfile.qualifications.map((q: string) => (
+                             <Badge key={q} variant="secondary">{q}</Badge>
+                          )) : <span className="text-sm text-muted-foreground">None listed</span>}
+                       </div>
+                    </div>
+
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><Briefcase className="h-4 w-4"/> Competencies</Label>
+                       <div className="flex flex-wrap gap-2">
+                          {viewingKycProfile.competencies?.length > 0 ? viewingKycProfile.competencies.map((c: string) => (
+                             <Badge key={c} variant="outline">{c}</Badge>
+                          )) : <span className="text-sm text-muted-foreground">None listed</span>}
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="space-y-4">
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><Users className="h-4 w-4"/> Team Availability</Label>
+                       <div className="p-3 border rounded-md text-sm">
+                          {viewingKycProfile.has_manpower ? (
+                             <span className="text-green-600 font-medium flex items-center gap-2">
+                                <Users className="h-4 w-4"/> Yes, Team of {viewingKycProfile.manpower_count}
+                             </span>
+                          ) : (
+                             <span className="text-muted-foreground">Individual Auditor (No Manpower)</span>
+                          )}
+                       </div>
+                    </div>
+
+                    <div>
+                       <Label className="flex items-center gap-2 mb-2"><Navigation className="h-4 w-4"/> Travel & Logistics</Label>
+                       <div className="p-3 border rounded-md text-sm space-y-2">
+                          <div className="flex justify-between">
+                             <span className="text-muted-foreground">Travel Radius:</span>
+                             <span className="font-medium">{viewingKycProfile.willing_to_travel_radius || 0} km</span>
+                          </div>
+                          <div className="flex justify-between items-start">
+                             <span className="text-muted-foreground whitespace-nowrap mr-2">Preferred States:</span>
+                             <span className="font-medium text-right flex flex-wrap justify-end gap-1">
+                                {viewingKycProfile.preferred_states?.length > 0 ? viewingKycProfile.preferred_states.map((s: string) => <Badge variant="secondary" className="text-[10px]" key={s}>{s}</Badge>) : 'None'}
+                             </span>
+                          </div>
+                          
+                          <div className="border-t pt-2 mt-2">
+                             <span className="text-muted-foreground block mb-1">Available Assets:</span>
+                             <div className="flex gap-4">
+                                <span className={viewingKycProfile.has_smartphone ? "text-green-600 font-medium" : "text-muted-foreground line-through opacity-50"}>Smartphone</span>
+                                <span className={viewingKycProfile.has_laptop ? "text-green-600 font-medium" : "text-muted-foreground line-through opacity-50"}>Laptop</span>
+                                <span className={viewingKycProfile.has_bike ? "text-green-600 font-medium" : "text-muted-foreground line-through opacity-50"}>Two-Wheeler</span>
+                             </div>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
               <Separator />
+              
+              {/* Documents */}
               <div>
-                <Label>Qualifications</Label>
-                <div className="flex gap-2 mt-1">{viewingKycProfile.qualifications?.map((q: string) => <Badge key={q}>{q}</Badge>)}</div>
-              </div>
-              <div>
-                <Label>Documents</Label>
-                <div className="grid grid-cols-2 gap-4 mt-2">
-                  <Card className="p-3"><div className="text-sm text-muted-foreground">PAN</div><div className="font-mono">{viewingKycProfile.pan_card}</div></Card>
-                  {viewingKycProfile.resume_url && (
+                <Label className="mb-2 flex items-center gap-2"><FileText className="h-4 w-4" /> Uploaded Documents</Label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  {viewingKycProfile.resume_url ? (
                     <Button variant="outline" className="h-auto py-3 justify-start" onClick={() => handleDownloadResume(viewingKycProfile.resume_url)}>
                       <Download className="mr-2 h-4 w-4" /> Download Resume
                     </Button>
+                  ) : (
+                    <div className="p-3 border rounded text-sm text-muted-foreground italic text-center">No Resume Uploaded</div>
+                  )}
+                  
+                  {viewingKycProfile.profile_photo_url ? (
+                    <Button variant="outline" className="h-auto py-3 justify-start" onClick={() => handleDownloadResume(viewingKycProfile.profile_photo_url)}>
+                      <Eye className="mr-2 h-4 w-4" /> View Profile Photo
+                    </Button>
+                  ) : (
+                    <div className="p-3 border rounded text-sm text-muted-foreground italic text-center">No Photo Uploaded</div>
                   )}
                 </div>
               </div>
             </div>
+          ) : (
+            <div className="py-10 text-center text-muted-foreground">Loading details...</div>
           )}
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 bg-background pt-4 border-t mt-4">
             <Button variant="outline" onClick={() => setKycDetailOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => { setKycDetailOpen(false); setSelectedKycUser(viewingKycProfile.user_id); setRejectionDialogOpen(true); }}>Reject</Button>
-            <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleKycApproval(viewingKycProfile.user_id, 'approved')}>Approve</Button>
+            <Button variant="destructive" onClick={() => { setKycDetailOpen(false); setSelectedKycUser(viewingKycProfile?.user_id); setRejectionDialogOpen(true); }}>Reject KYC</Button>
+            <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleKycApproval(viewingKycProfile?.user_id, 'approved')}>Approve KYC</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
