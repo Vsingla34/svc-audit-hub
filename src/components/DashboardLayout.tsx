@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -37,11 +37,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface NavItem {
+export interface NavItem {
   title: string;
   icon: React.ElementType;
   href?: string;
   onClick?: () => void;
+  activeId?: string; // used to match with activeTab
 }
 
 interface DashboardLayoutProps {
@@ -63,6 +64,7 @@ function AppSidebar({
 }) {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
 
@@ -114,7 +116,6 @@ function AppSidebar({
   };
 
   return (
-    // UPDATED: bg-[#4338CA]
     <Sidebar collapsible="icon" className="border-r-0 bg-[#4338CA] text-white" variant="sidebar">
       <SidebarContent className="pt-6 px-3 bg-[#4338CA]">
         <div className={cn(
@@ -150,7 +151,10 @@ function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
               {navItems.map((item) => {
-                const isActive = activeTab === item.title.toLowerCase().replace(/\s+/g, '-');
+                // Determine active state by exact ID match or falling back to URL matching
+                const itemActiveId = item.activeId || item.title.toLowerCase().replace(/\s+/g, '-');
+                const isActive = activeTab ? activeTab === itemActiveId : location.pathname.includes(item.href || '');
+                
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
@@ -160,17 +164,14 @@ function AppSidebar({
                         } else if (item.onClick) {
                           item.onClick();
                         } else if (onTabChange) {
-                          onTabChange(item.title.toLowerCase().replace(/\s+/g, '-'));
+                          onTabChange(itemActiveId);
                         }
                       }}
                       tooltip={item.title}
                       className={cn(
                         "group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200",
-                        // Default state: White Text
                         "text-white",
-                        // Hover state: White BG, Purple Text (#4338CA)
                         "hover:bg-white hover:text-[#4338CA]",
-                        // Active state: White BG, Purple Text
                         isActive && "bg-white text-[#4338CA] font-semibold shadow-sm hover:bg-white hover:text-[#4338CA]"
                       )}
                     >
@@ -260,26 +261,25 @@ export function DashboardLayout({
   );
 }
 
+// ADMIN MENU UPDATED TO USE REAL ROUTES
 export const adminNavItems: NavItem[] = [
-  { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
-  { title: 'Assignments', icon: Briefcase, href: '/dashboard?tab=assignments' },
-  { title: 'Deadlines', icon: AlertTriangle, href: '/dashboard?tab=deadlines' },
-  { title: 'Applications', icon: FileCheck, href: '/dashboard?tab=applications' },
-  { title: 'Reports', icon: FileText, href: '/dashboard?tab=reports' },
-  { title: 'KYC Approvals', icon: Shield, href: '/dashboard?tab=kyc-approvals' },
-  { title: 'User Roles', icon: Shield, href: '/dashboard?tab=user-roles' },
+  { title: 'Overview', icon: LayoutDashboard, href: '/admin/overview', activeId: 'overview' },
+  { title: 'Assignments', icon: Briefcase, href: '/admin/assignments', activeId: 'assignments' },
+  { title: 'Applications & KYC', icon: FileCheck, href: '/admin/applications', activeId: 'applications' },
+  { title: 'Deadlines', icon: AlertTriangle, href: '/admin/deadlines', activeId: 'deadlines' },
+  { title: 'Reports', icon: FileText, href: '/admin/reports', activeId: 'reports' },
+  { title: 'User Roles', icon: Shield, href: '/admin/users', activeId: 'user-roles' },
   { title: 'Map View', icon: MapPin, href: '/map' },
   { title: 'Payments', icon: DollarSign, href: '/payments' },
 ];
 
+// AUDITOR MENU WILL BE UPDATED WHEN WE SEPARATE IT
 export const auditorNavItems: NavItem[] = [
-  { title: 'Overview', icon: LayoutDashboard, href: '/dashboard?tab=overview' },
-  { title: 'Live Report', icon: Radio, href: '/dashboard?tab=live-report' },
+  { title: 'Overview', icon: LayoutDashboard, href: '/auditor/overview', activeId: 'overview' },
+  { title: 'Live Report', icon: Radio, href: '/auditor/live-report', activeId: 'live-report' },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Bank & KYC', icon: Landmark, href: '/bank-kyc' },
-  { title: 'Available Jobs', icon: Briefcase, href: '/dashboard?tab=available-jobs' },
-  { title: 'My Applications', icon: Clock, href: '/dashboard?tab=my-applications' },
-  { title: 'My Assignments', icon: FileCheck, href: '/dashboard?tab=my-assignments' },
-  { title: 'Analytics', icon: BarChart3, href: '/dashboard?tab=analytics' },
+  { title: 'Available Jobs', icon: Briefcase, href: '/auditor/available-jobs', activeId: 'available-jobs' },
+  { title: 'My Jobs', icon: FileCheck, href: '/auditor/assignments', activeId: 'my-jobs' }, // Renamed and changed activeId
   { title: 'Payments', icon: DollarSign, href: '/payments' },
 ];

@@ -2,111 +2,198 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DashboardLayout, auditorNavItems } from '@/components/DashboardLayout';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { ArrowLeft, User, Mail, Phone, Save, Shield, Loader2 } from 'lucide-react';
-import { z } from 'zod';
-
-const phoneSchema = z.string()
-  .trim()
-  .min(10, 'Mobile number must be at least 10 digits')
-  .max(15, 'Mobile number must be less than 15 digits')
-  .regex(/^[6-9]\d{9}$/, 'Please enter a valid 10-digit Indian mobile number');
-
-const fullNameSchema = z.string()
-  .trim()
-  .min(2, 'Name must be at least 2 characters')
-  .max(100, 'Name must be less than 100 characters')
-  .regex(/^[a-zA-Z\s'-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes');
-
-interface Profile {
-  id: string;
-  full_name: string;
-  email: string;
-  phone: string | null;
-}
+import { Upload, User, Briefcase, MapPin, CheckCircle2, FileText, Image as ImageIcon, Users, AlertCircle } from 'lucide-react';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 export default function ProfileEdit() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [uploadingField, setUploadingField] = useState<string | null>(null);
+
+  // Keep track of the specific data that REQUIRES admin approval
+  const [originalSensitiveData, setOriginalSensitiveData] = useState<any>({});
+
   const [formData, setFormData] = useState({
     full_name: '',
     phone: '',
+    qualifications: '',  
+    pan_card: '',        
+    gst_number: '',
+    experience_years: 0,
+    preferred_states: '', 
+    preferred_cities: '', 
+    base_city: '',
+    base_state: '',
+    willing_to_travel_radius: 0,
+    has_manpower: false,
+    manpower_count: 0,
+    competencies: '',     
+    core_competency: '',
+    address: '',
+    resume_url: '',
+    profile_photo_url: ''
   });
-  const [errors, setErrors] = useState<{ full_name?: string; phone?: string }>({});
 
   useEffect(() => {
-    if (user) fetchProfile();
+    if (user) fetchProfileData();
   }, [user]);
 
-  const fetchProfile = async () => {
+  const fetchProfileData = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user?.id)
-        .single();
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', user?.id).single();
+      const { data: audProfile } = await supabase.from('auditor_profiles').select('*').eq('user_id', user?.id).maybeSingle();
 
-      if (error) throw error;
-      
-      setProfile(data);
+      // Store a snapshot of ONLY the fields that require approval
+      setOriginalSensitiveData({
+        qualifications: audProfile?.qualifications?.join(', ') || '',
+        resume_url: audProfile?.resume_url || '',
+        has_manpower: audProfile?.has_manpower || false,
+        manpower_count: audProfile?.manpower_count || 0,
+        competencies: audProfile?.competencies?.join(', ') || '',
+        core_competency: audProfile?.core_competency || '',
+        address: audProfile?.address || '',
+      });
+
       setFormData({
-        full_name: data.full_name || '',
-        phone: data.phone || '',
+        full_name: profile?.full_name || '',
+        phone: profile?.phone || '',
+        qualifications: audProfile?.qualifications?.join(', ') || '',
+        pan_card: audProfile?.pan_card || '',
+        gst_number: audProfile?.gst_number || '',
+        experience_years: audProfile?.experience_years || 0,
+        preferred_states: audProfile?.preferred_states?.join(', ') || '',
+        preferred_cities: audProfile?.preferred_cities?.join(', ') || '',
+        base_city: audProfile?.base_city || '',
+        base_state: audProfile?.base_state || '',
+        willing_to_travel_radius: audProfile?.willing_to_travel_radius || 0,
+        has_manpower: audProfile?.has_manpower || false,
+        manpower_count: audProfile?.manpower_count || 0,
+        competencies: audProfile?.competencies?.join(', ') || '',
+        core_competency: audProfile?.core_competency || '',
+        address: audProfile?.address || '',
+        resume_url: audProfile?.resume_url || '',
+        profile_photo_url: audProfile?.profile_photo_url || ''
       });
     } catch (error: any) {
-      toast.error('Failed to load profile: ' + error.message);
+      toast.error('Failed to load profile data');
     } finally {
       setLoading(false);
     }
   };
 
-  const validateForm = (): boolean => {
-    const newErrors: { full_name?: string; phone?: string } = {};
-    
-    const nameResult = fullNameSchema.safeParse(formData.full_name);
-    if (!nameResult.success) {
-      newErrors.full_name = nameResult.error.errors[0].message;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData(prev => ({ ...prev, [name]: checked }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
     }
-
-    if (formData.phone) {
-      const phoneResult = phoneSchema.safeParse(formData.phone);
-      if (!phoneResult.success) {
-        newErrors.phone = phoneResult.error.errors[0].message;
-      }
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
 
-    setSaving(true);
+    setUploadingField(fieldName);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: formData.full_name.trim(),
-          phone: formData.phone.trim() || null,
-        })
-        .eq('id', user?.id);
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${user.id}/profile/${fieldName}-${Date.now()}.${fileExt}`;
 
-      if (error) throw error;
+      const { error: uploadError } = await supabase.storage.from('kyc-documents').upload(filePath, file);
+      if (uploadError) throw uploadError;
 
-      toast.success('Profile updated successfully!');
-      navigate('/dashboard');
+      setFormData(prev => ({ ...prev, [fieldName]: filePath }));
+      toast.success('File uploaded successfully!');
     } catch (error: any) {
-      toast.error('Failed to update profile: ' + error.message);
+      toast.error(`Upload failed: ${error.message}`);
+    } finally {
+      setUploadingField(null);
+      e.target.value = '';
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+    setSaving(true);
+    
+    try {
+      // 1. SMART CHECK: Did they change the fields that require admin approval?
+      let requiresReapproval = false;
+      const currentManpowerCount = formData.has_manpower ? Number(formData.manpower_count) : 0;
+      
+      if (
+        formData.qualifications !== originalSensitiveData.qualifications ||
+        formData.resume_url !== originalSensitiveData.resume_url ||
+        formData.has_manpower !== originalSensitiveData.has_manpower ||
+        currentManpowerCount !== originalSensitiveData.manpower_count ||
+        formData.competencies !== originalSensitiveData.competencies ||
+        formData.core_competency !== originalSensitiveData.core_competency ||
+        formData.address !== originalSensitiveData.address
+      ) {
+        requiresReapproval = true;
+      }
+
+      // 2. Update profiles table (Name & Phone) - Does not trigger approval
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ full_name: formData.full_name, phone: formData.phone })
+        .eq('id', user.id);
+      if (profileError) throw profileError;
+
+      // 3. Prepare payload for auditor_profiles
+      const audPayload: any = {
+        user_id: user.id,
+        qualifications: formData.qualifications.split(',').map(s => s.trim()).filter(Boolean),
+        pan_card: formData.pan_card || null,
+        gst_number: formData.gst_number || null,
+        experience_years: Number(formData.experience_years) || 0,
+        preferred_states: formData.preferred_states.split(',').map(s => s.trim()).filter(Boolean),
+        preferred_cities: formData.preferred_cities.split(',').map(s => s.trim()).filter(Boolean),
+        base_city: formData.base_city || null,
+        base_state: formData.base_state || null,
+        willing_to_travel_radius: Number(formData.willing_to_travel_radius) || 0,
+        has_manpower: formData.has_manpower,
+        manpower_count: currentManpowerCount,
+        competencies: formData.competencies.split(',').map(s => s.trim()).filter(Boolean),
+        core_competency: formData.core_competency || null,
+        address: formData.address || null,
+        resume_url: formData.resume_url || null,
+        profile_photo_url: formData.profile_photo_url || null,
+      };
+
+      // 4. Upsert into auditor_profiles
+      const { data: existing } = await supabase.from('auditor_profiles').select('id').eq('user_id', user.id).maybeSingle();
+      
+      if (existing) {
+        if (requiresReapproval) audPayload.kyc_status = 'pending'; // Require admin approval
+        const { error } = await supabase.from('auditor_profiles').update(audPayload).eq('user_id', user.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('auditor_profiles').insert([{ ...audPayload, kyc_status: 'pending' }]);
+        if (error) throw error;
+      }
+
+      if (requiresReapproval) {
+        toast.success('Profile saved! Submitted for Admin Approval.');
+      } else {
+        toast.success('Profile updated instantly!');
+      }
+      
+      navigate('/dashboard'); 
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -114,149 +201,118 @@ export default function ProfileEdit() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-      </div>
+      <DashboardLayout title="Edit Profile" navItems={auditorNavItems} activeTab="my-profile">
+        <div className="flex items-center justify-center py-20 text-muted-foreground animate-pulse">Loading profile...</div>
+      </DashboardLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <Button variant="ghost" onClick={() => navigate('/dashboard')} className="gap-2 hover:bg-primary/10 mb-4">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Button>
-        </div>
+    <DashboardLayout title="Edit Profile" navItems={auditorNavItems} activeTab="my-profile">
+      <div className="max-w-5xl mx-auto py-6 space-y-6">
 
-        <Card className="shadow-xl border-0 bg-card/80 backdrop-blur-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b border-border/50 pb-6">
-            <div className="flex items-start gap-4">
-              <div className="h-14 w-14 rounded-xl bg-primary/10 flex items-center justify-center">
-                <User className="h-7 w-7 text-primary" />
-              </div>
+        <Alert className="bg-amber-50 border-amber-200 text-amber-800">
+           <AlertCircle className="h-4 w-4 text-amber-600" />
+           <AlertTitle>Approval Requirements</AlertTitle>
+           <AlertDescription>
+             Changes to your <strong>Qualifications, Resume, Manpower, Competencies, and Address</strong> will put your profile under review and require Admin Re-approval. All other profile fields are updated instantly.
+           </AlertDescription>
+        </Alert>
+
+        <Card className="border-none shadow-md">
+          <CardHeader className="bg-muted/10 border-b pb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-[#4338CA]/10 rounded-xl"><User className="h-6 w-6 text-[#4338CA]" /></div>
               <div>
-                <CardTitle className="text-xl font-bold">Edit Profile</CardTitle>
-                <CardDescription className="mt-1">
-                  Update your personal information
-                </CardDescription>
+                <CardTitle className="text-2xl">Professional Profile</CardTitle>
+                <CardDescription>Update your personal, professional, and location details.</CardDescription>
               </div>
             </div>
           </CardHeader>
 
-          <CardContent className="p-6 sm:p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Email (Read-only) */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  Email Address
-                </Label>
-                <div className="relative">
-                  <Input
-                    type="email"
-                    value={profile?.email || ''}
-                    disabled
-                    className="bg-muted/50 cursor-not-allowed"
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Shield className="h-4 w-4 text-muted-foreground" />
-                  </div>
+          <CardContent className="space-y-8 pt-8">
+            {/* PERSONAL DETAILS */}
+            <div>
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-4"><User className="h-5 w-5 text-[#4338CA]"/> Personal Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Full Name</Label><Input name="full_name" value={formData.full_name} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>Phone Number</Label><Input name="phone" value={formData.phone} onChange={handleChange} /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Full Address <span className="text-xs text-amber-600">(Requires Approval)</span></Label><Textarea name="address" value={formData.address} onChange={handleChange} /></div>
+              </div>
+            </div>
+
+            {/* PROFESSIONAL DETAILS */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-4"><Briefcase className="h-5 w-5 text-[#4338CA]"/> Professional Background</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Core Competency <span className="text-xs text-amber-600">(Requires Approval)</span></Label><Input name="core_competency" value={formData.core_competency} onChange={handleChange} placeholder="e.g. Statutory Audit, Stock Audit" /></div>
+                <div className="space-y-2"><Label>Years of Experience</Label><Input type="number" name="experience_years" value={formData.experience_years} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>PAN Number</Label><Input name="pan_card" value={formData.pan_card} onChange={handleChange} className="uppercase" /></div>
+                <div className="space-y-2"><Label>GST Number <span className="text-xs text-muted-foreground">(Optional)</span></Label><Input name="gst_number" value={formData.gst_number} onChange={handleChange} className="uppercase" /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Qualifications <span className="text-xs text-amber-600">(Comma separated - Requires Approval)</span></Label><Input name="qualifications" value={formData.qualifications} onChange={handleChange} placeholder="e.g. CA, B.Com, MBA" /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Other Competencies <span className="text-xs text-amber-600">(Comma separated - Requires Approval)</span></Label><Input name="competencies" value={formData.competencies} onChange={handleChange} placeholder="e.g. Tax Audit, Forensic Audit" /></div>
+              </div>
+            </div>
+
+            {/* LOCATION & TRAVEL */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-4"><MapPin className="h-5 w-5 text-[#4338CA]"/> Location & Travel</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Base State</Label><Input name="base_state" value={formData.base_state} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>Base City</Label><Input name="base_city" value={formData.base_city} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>Travel Radius (in KM)</Label><Input type="number" name="willing_to_travel_radius" value={formData.willing_to_travel_radius} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>Preferred States <span className="text-xs text-muted-foreground">(Comma separated)</span></Label><Input name="preferred_states" value={formData.preferred_states} onChange={handleChange} placeholder="e.g. Delhi, Haryana" /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Preferred Cities <span className="text-xs text-muted-foreground">(Comma separated)</span></Label><Input name="preferred_cities" value={formData.preferred_cities} onChange={handleChange} placeholder="e.g. New Delhi, Gurgaon" /></div>
+              </div>
+            </div>
+
+            {/* TEAM AVAILABILITY */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-4"><Users className="h-5 w-5 text-[#4338CA]"/> Team & Manpower <span className="text-xs font-normal text-amber-600">(Requires Approval)</span></h3>
+              <div className="flex items-center space-x-2 mb-4">
+                <Checkbox id="has_manpower" name="has_manpower" checked={formData.has_manpower} onCheckedChange={(c) => setFormData(prev => ({...prev, has_manpower: !!c}))} />
+                <Label htmlFor="has_manpower">I have a team / additional manpower available for large audits</Label>
+              </div>
+              {formData.has_manpower && (
+                <div className="space-y-2 max-w-sm"><Label>Team Size (Number of people)</Label><Input type="number" name="manpower_count" value={formData.manpower_count} onChange={handleChange} /></div>
+              )}
+            </div>
+
+            {/* DOCUMENTS */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-semibold flex items-center gap-2 mb-4"><FileText className="h-5 w-5 text-[#4338CA]"/> Profile Documents</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Profile Photo */}
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-2 font-medium"><ImageIcon className="h-4 w-4" /> Profile Photo</Label>
+                  <label className="cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center bg-white hover:bg-muted/5 transition-colors">
+                    {uploadingField === 'profile_photo_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.profile_photo_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload Image</span></>}
+                  </label>
+                  <input type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'profile_photo_url')} disabled={uploadingField !== null} />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Email cannot be changed. Contact support if needed.
-                </p>
-              </div>
 
-              {/* Full Name */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <User className="h-4 w-4 text-muted-foreground" />
-                  Full Name
-                </Label>
-                <Input
-                  type="text"
-                  value={formData.full_name}
-                  onChange={(e) => {
-                    setFormData({ ...formData, full_name: e.target.value });
-                    if (errors.full_name) setErrors({ ...errors, full_name: undefined });
-                  }}
-                  placeholder="Enter your full name"
-                  className={errors.full_name ? 'border-destructive focus-visible:ring-destructive' : ''}
-                />
-                {errors.full_name && (
-                  <p className="text-sm text-destructive">{errors.full_name}</p>
-                )}
-              </div>
+                {/* Resume */}
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-2 font-medium"><FileText className="h-4 w-4" /> Professional Resume <span className="text-xs text-amber-600">(Requires Approval)</span></Label>
+                  <label className="cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center bg-white hover:bg-muted/5 transition-colors">
+                    {uploadingField === 'resume_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.resume_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload PDF/Doc</span></>}
+                  </label>
+                  <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => handleFileUpload(e, 'resume_url')} disabled={uploadingField !== null} />
+                </div>
 
-              {/* Phone */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  Mobile Number
-                </Label>
-                <Input
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '').slice(0, 10);
-                    setFormData({ ...formData, phone: value });
-                    if (errors.phone) setErrors({ ...errors, phone: undefined });
-                  }}
-                  placeholder="9876543210"
-                  className={errors.phone ? 'border-destructive focus-visible:ring-destructive' : ''}
-                />
-                {errors.phone && (
-                  <p className="text-sm text-destructive">{errors.phone}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Enter your 10-digit Indian mobile number
-                </p>
               </div>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-border/50">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => navigate('/dashboard')}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" className="flex-1" disabled={saving}>
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Changes
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
           </CardContent>
-        </Card>
 
-        {/* Additional Actions Card */}
-        <Card className="mt-6 shadow-lg border-0">
-          <CardHeader>
-            <CardTitle className="text-lg">Account Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/profile-setup')}>
-              <Shield className="h-4 w-4 mr-2" />
-              Update Auditor Profile & KYC
+          <CardFooter className="bg-muted/5 border-t px-6 py-4 flex justify-end">
+            <Button size="lg" className="bg-[#4338CA] hover:bg-[#4338CA]/90 font-semibold px-8" onClick={handleSave} disabled={saving || uploadingField !== null}>
+              {saving ? 'Saving Profile...' : 'Save Profile'}
             </Button>
-          </CardContent>
+          </CardFooter>
         </Card>
       </div>
-    </div>
+    </DashboardLayout>
   );
 }

@@ -1,351 +1,331 @@
-import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+import { useState } from 'react';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useToast } from '@/hooks/use-toast';
-import { Plus } from 'lucide-react';
-import { addDays, format } from 'date-fns';
+import { toast } from 'sonner';
+import { Plus, IndianRupee, MapPin, Briefcase, Laptop, Smartphone, Bike, CalendarDays, FileText } from 'lucide-react';
 
-// Using the same competency list for Industry
-const INDUSTRIES = [
-  "Accounting & Bookkeeping", "Financial Reporting", "Manufacturing", "Banking", 
-  "Retail", "Technology", "Healthcare", "Real Estate", "Logistics", "Hospitality",
-  "Automotive", "Education", "Consulting", "Non-Profit"
+const INDIAN_STATES = [
+  "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", 
+  "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli and Daman and Diu", "Delhi", 
+  "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", 
+  "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", 
+  "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", 
+  "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", 
+  "Uttarakhand", "West Bengal"
 ];
 
-const formSchema = z.object({
-  client_name: z.string().min(2, "Client name is required"),
-  branch_name: z.string().min(2, "Branch name is required"),
-  assignment_number: z.string().min(1, "Assignment ID is required"),
-  audit_type: z.string().min(1, "Audit type is required"),
-  industry: z.string().min(1, "Industry is required"),
-  audit_date: z.string().min(1, "Audit date is required"),
-  deadline_date: z.string().min(1, "Deadline date is required"),
-  city: z.string().min(1, "City is required"),
-  state: z.string().min(1, "State is required"),
-  // Changed to coerce number to handle input type="number" correctly
-  fees: z.coerce.number().min(1, "Fees must be greater than 0"),
-  qualification_required: z.string().min(1, "Qualification is required"),
-  duration: z.string().min(1, "Duration is required"),
-  reimbursement: z.string().optional(),
-  additional_info: z.string().optional(),
-  laptop_required: z.boolean().default(false),
-  address: z.string().min(3, "Address is required"),
-  pincode: z.string().min(3, "Pincode is required"),
-});
+const AUDIT_TYPES = [
+  "Statutory Audit", "Internal Audit", "Tax Audit", "Stock/Inventory Audit",
+  "Concurrent Audit", "Forensic Audit", "Information Systems (IS) Audit",
+  "Compliance Audit", "Management Audit", "Operational Audit", "Financial Audit",
+  "Secretarial Audit", "Due Diligence", "Fixed Assets Audit", "Revenue Audit", "Other"
+];
 
 export function CreateAssignmentDialog({ onAssignmentCreated }: { onAssignmentCreated: () => void }) {
+  const { user } = useAuth(); // CRITICAL: Needed for 'created_by' field
   const [open, setOpen] = useState(false);
-  const { toast } = useToast();
-  
-  // Calculate a default deadline (e.g., 7 days from now)
-  const defaultDeadline = format(addDays(new Date(), 7), 'yyyy-MM-dd');
+  const [saving, setSaving] = useState(false);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      client_name: "",
-      assignment_number: "",
-      audit_type: "",
-      industry: "",
-      city: "",
-      state: "",
-      fees: 0,
-      qualification_required: "",
-      duration: "",
-      reimbursement: "",
-      additional_info: "",
-      laptop_required: false,
-      audit_date: "",
-      // Pre-fill hidden required fields so validation passes
-      branch_name: "Main Branch",
-      address: "TBD",
-      pincode: "000000",
-      deadline_date: defaultDeadline,
-    },
+  // State mapped exactly to your DB schema
+  const [formData, setFormData] = useState({
+    client_name: '',
+    branch_name: '',
+    audit_type: '',
+    industry: '',
+    duration: '',
+    qualification_required: '',
+    address: '',
+    state: '',
+    city: '',
+    pincode: '', 
+    audit_date: '',
+    deadline_date: '',
+    additional_info: '',
+    requires_smartphone: false,
+    requires_laptop: false,
+    requires_bike: false,
+    fees: '',
+    ope: '',
+    reimbursement_food: '',
+    reimbursement_courier: '',
+    reimbursement_conveyance: '',
+    reimbursement: '' // text notes
   });
 
-  // Watch for validation errors in console for debugging
-  useEffect(() => {
-    if (Object.keys(form.formState.errors).length > 0) {
-      console.log("Validation Errors:", form.formState.errors);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleCheckboxChange = (name: string, checked: boolean) => {
+    setFormData({ ...formData, [name]: checked });
+  };
+
+  const handleStateChange = (value: string) => {
+    setFormData({ ...formData, state: value });
+  };
+
+  const handleAuditTypeChange = (value: string) => {
+    setFormData({ ...formData, audit_type: value });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      toast.error("You must be logged in to create an assignment.");
+      return;
     }
-  }, [form.formState.errors]);
-
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Submitting values:", values);
+    setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
-        return;
-      }
+      if (!formData.audit_type) throw new Error("Please select an Audit Type");
+      if (!formData.state) throw new Error("Please select a State");
 
-      const { error } = await supabase.from('assignments').insert({
-        ...values,
-        created_by: user.id,
+      // Construct payload EXACTLY matching your database columns
+      const payload = {
+        client_name: formData.client_name,
+        branch_name: formData.branch_name,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        audit_type: formData.audit_type,
+        industry: formData.industry || null,
+        audit_date: formData.audit_date,
+        deadline_date: formData.deadline_date,
+        duration: formData.duration || null,
+        qualification_required: formData.qualification_required || null,
+        additional_info: formData.additional_info || null,
+        
+        // Payout Details
+        fees: Number(formData.fees) || 0,
+        ope: Number(formData.ope) || 0,
+        reimbursement: formData.reimbursement || null,
+        reimbursement_food: Number(formData.reimbursement_food) || 0,
+        reimbursement_courier: Number(formData.reimbursement_courier) || 0,
+        reimbursement_conveyance: Number(formData.reimbursement_conveyance) || 0,
+
+        // Asset Requirements (Syncing both laptop columns just in case)
+        requires_smartphone: formData.requires_smartphone,
+        requires_laptop: formData.requires_laptop,
+        laptop_required: formData.requires_laptop, 
+        requires_bike: formData.requires_bike,
+
+        // System Fields
         status: 'open',
-      });
+        created_by: user.id // Mandatory in your schema
+      };
+
+      const { error } = await supabase.from('assignments').insert([payload]);
 
       if (error) throw error;
 
-      toast({
-        title: "Assignment Created",
-        description: "The assignment has been successfully posted.",
-      });
+      toast.success("Assignment created successfully!");
       setOpen(false);
-      form.reset();
-      onAssignmentCreated();
-    } catch (error: any) {
-      console.error("Supabase Error:", error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to create assignment",
-        variant: "destructive",
+      onAssignmentCreated(); 
+      
+      // Reset form on success
+      setFormData({
+        client_name: '', branch_name: '', audit_type: '', industry: '', duration: '', qualification_required: '',
+        address: '', state: '', city: '', pincode: '', audit_date: '', deadline_date: '', additional_info: '',
+        requires_smartphone: false, requires_laptop: false, requires_bike: false,
+        fees: '', ope: '', reimbursement_food: '', reimbursement_courier: '', reimbursement_conveyance: '', reimbursement: ''
       });
+      
+    } catch (error: any) {
+      toast.error(error.message || "Failed to create assignment");
+      console.error("Assignment Creation Error:", error);
+    } finally {
+      setSaving(false);
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="gap-2">
-          <Plus className="h-4 w-4" /> Create Assignment
+        <Button className="bg-[#4338CA] hover:bg-[#4338CA]/90 text-white">
+          <Plus className="mr-2 h-4 w-4" /> Create Assignment
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Assignment</DialogTitle>
+          <DialogTitle className="text-2xl">Create New Assignment</DialogTitle>
         </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="assignment_number"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Assignment ID</FormLabel>
-                    <FormControl><Input placeholder="e.g. ASG-001" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="audit_type"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Type (Audit Type)</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="Internal Audit">Internal Audit</SelectItem>
-                        <SelectItem value="Statutory Audit">Statutory Audit</SelectItem>
-                        <SelectItem value="Stock Audit">Stock Audit</SelectItem>
-                        <SelectItem value="Tax Audit">Tax Audit</SelectItem>
-                        <SelectItem value="Concurrent Audit">Concurrent Audit</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+
+        <form onSubmit={handleSubmit} className="space-y-8 mt-4">
+          
+          {/* SECTION 1: BASIC DETAILS */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 border-b pb-2">
+              <Briefcase className="h-4 w-4" /> Core Audit Details
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Client Name *</Label>
+                <Input required name="client_name" value={formData.client_name} onChange={handleChange} placeholder="e.g. HDFC Bank" />
+              </div>
+              <div className="space-y-2">
+                <Label>Branch/Unit Name *</Label>
+                <Input required name="branch_name" value={formData.branch_name} onChange={handleChange} placeholder="e.g. Connaught Place Branch" />
+              </div>
+              <div className="space-y-2">
+                <Label>Industry</Label>
+                <Input name="industry" value={formData.industry} onChange={handleChange} placeholder="e.g. Banking, Retail" />
+              </div>
+              <div className="space-y-2">
+                <Label>Audit Type *</Label>
+                <Select value={formData.audit_type} onValueChange={handleAuditTypeChange} required>
+                  <SelectTrigger><SelectValue placeholder="Select Audit Type" /></SelectTrigger>
+                  <SelectContent className="max-h-[200px]">
+                    {AUDIT_TYPES.map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Required Qualification</Label>
+                <Input name="qualification_required" value={formData.qualification_required} onChange={handleChange} placeholder="e.g. CA, B.Com" />
+              </div>
+              <div className="space-y-2">
+                <Label>Est. Duration</Label>
+                <Input name="duration" value={formData.duration} onChange={handleChange} placeholder="e.g. 2 Days, 1 Week" />
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 2: LOCATION & DATES */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 border-b pb-2">
+                <MapPin className="h-4 w-4" /> Location
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <Label>Full Address *</Label>
+                  <Textarea required name="address" value={formData.address} onChange={handleChange} placeholder="Enter the complete address..." className="resize-none" />
+                </div>
+                <div className="space-y-2">
+                  <Label>City *</Label>
+                  <Input required name="city" value={formData.city} onChange={handleChange} placeholder="City Name" />
+                </div>
+                <div className="space-y-2">
+                  <Label>PIN Code *</Label>
+                  <Input required name="pincode" value={formData.pincode} onChange={handleChange} placeholder="PIN" maxLength={6} />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>State *</Label>
+                  <Select value={formData.state} onValueChange={handleStateChange} required>
+                    <SelectTrigger><SelectValue placeholder="Select State" /></SelectTrigger>
+                    <SelectContent className="max-h-[200px]">
+                      {INDIAN_STATES.map(state => (
+                        <SelectItem key={state} value={state}>{state}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="client_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Client Name</FormLabel>
-                    <FormControl><Input placeholder="Client Name" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="industry"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Industry</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl><SelectTrigger><SelectValue placeholder="Select Industry" /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {INDUSTRIES.map(ind => <SelectItem key={ind} value={ind}>{ind}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="fees"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount per man/day (₹)</FormLabel>
-                    <FormControl><Input type="number" placeholder="0" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="qualification_required"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Qualification Required</FormLabel>
-                    <FormControl><Input placeholder="e.g. CA Inter, Qualified CA" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="audit_date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Start Date</FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="duration"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Duration</FormLabel>
-                    <FormControl><Input placeholder="e.g. 5 Days" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-               <FormField
-                control={form.control}
-                name="city"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Location (City)</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="state"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Location (State)</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Hidden Fields: We render them but keep them hidden. 
-                Crucially, we do NOT override 'value' here so RHF can control them. */}
-            <div className="hidden">
-               <FormField control={form.control} name="branch_name" render={({ field }) => <Input {...field} />} />
-               <FormField control={form.control} name="deadline_date" render={({ field }) => <Input {...field} />} />
-               <FormField control={form.control} name="address" render={({ field }) => <Input {...field} />} />
-               <FormField control={form.control} name="pincode" render={({ field }) => <Input {...field} />} />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="reimbursement"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Reimbursement Policy</FormLabel>
-                  <FormControl><Input placeholder="e.g. Travel & Food at actuals" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="laptop_required"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
-                  <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>Laptop Required?</FormLabel>
-                    <FormDescription>Check if the auditor must bring their own laptop.</FormDescription>
+            <div className="space-y-4">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 border-b pb-2">
+                <CalendarDays className="h-4 w-4" /> Schedule & Requirements
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Audit Date *</Label>
+                  <Input required type="date" name="audit_date" value={formData.audit_date} onChange={handleChange} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Report Deadline *</Label>
+                  <Input required type="date" name="deadline_date" value={formData.deadline_date} onChange={handleChange} />
+                </div>
+                
+                <div className="col-span-2 space-y-3 pt-2">
+                  <Label>Required Assets</Label>
+                  <div className="flex flex-wrap gap-4 bg-muted/20 p-3 rounded-lg border">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="req_smartphone" checked={formData.requires_smartphone} onCheckedChange={(c) => handleCheckboxChange('requires_smartphone', !!c)} />
+                      <Label htmlFor="req_smartphone" className="flex items-center gap-1 cursor-pointer"><Smartphone className="h-4 w-4 text-muted-foreground"/> Phone</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="req_laptop" checked={formData.requires_laptop} onCheckedChange={(c) => handleCheckboxChange('requires_laptop', !!c)} />
+                      <Label htmlFor="req_laptop" className="flex items-center gap-1 cursor-pointer"><Laptop className="h-4 w-4 text-muted-foreground"/> Laptop</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox id="req_bike" checked={formData.requires_bike} onCheckedChange={(c) => handleCheckboxChange('requires_bike', !!c)} />
+                      <Label htmlFor="req_bike" className="flex items-center gap-1 cursor-pointer"><Bike className="h-4 w-4 text-muted-foreground"/> Two-Wheeler</Label>
+                    </div>
                   </div>
-                </FormItem>
-              )}
-            />
+                </div>
+              </div>
+            </div>
+          </div>
 
-            <FormField
-              control={form.control}
-              name="additional_info"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Additional Information</FormLabel>
-                  <FormControl>
-                    <Textarea 
-                      placeholder="Enter any specific requirements, scope details, or special instructions here..." 
-                      className="resize-none" 
-                      {...field} 
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          {/* SECTION 3: PAYOUT & REIMBURSEMENTS */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 border-b pb-2">
+              <IndianRupee className="h-4 w-4" /> Payout & Reimbursements
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label>Base Fees (₹) *</Label>
+                <Input required type="number" name="fees" value={formData.fees} onChange={handleChange} placeholder="0" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">OPE Limit (₹)</Label>
+                <Input type="number" name="ope" value={formData.ope} onChange={handleChange} placeholder="0" />
+              </div>
+              <div className="space-y-2 col-span-2">
+                <Label className="text-muted-foreground">Reimbursement Guidelines</Label>
+                <Input name="reimbursement" value={formData.reimbursement} onChange={handleChange} placeholder="e.g. As per actuals, Bill required" />
+              </div>
+            </div>
 
-            <Button type="submit" className="w-full">Post Assignment</Button>
-          </form>
-        </Form>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-muted/10 p-4 rounded-lg border">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Food Allowance (₹)</Label>
+                <Input type="number" name="reimbursement_food" value={formData.reimbursement_food} onChange={handleChange} placeholder="0" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Courier Charges (₹)</Label>
+                <Input type="number" name="reimbursement_courier" value={formData.reimbursement_courier} onChange={handleChange} placeholder="0" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Conveyance (₹)</Label>
+                <Input type="number" name="reimbursement_conveyance" value={formData.reimbursement_conveyance} onChange={handleChange} placeholder="0" />
+              </div>
+            </div>
+          </div>
+
+          {/* SECTION 4: ADDITIONAL INFO */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2 border-b pb-2">
+              <FileText className="h-4 w-4" /> Additional Information
+            </h3>
+            <Textarea 
+              name="additional_info" 
+              value={formData.additional_info} 
+              onChange={handleChange} 
+              placeholder="Any other instructions, scope of work summary, or special requirements for the auditor..." 
+              className="min-h-[80px]"
+            />
+          </div>
+
+          <DialogFooter className="pt-4 border-t sticky bottom-0 bg-background/95 backdrop-blur py-4 z-10">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" className="bg-[#4338CA] hover:bg-[#4338CA]/90 px-8" disabled={saving}>
+              {saving ? 'Creating Assignment...' : 'Publish Assignment'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
