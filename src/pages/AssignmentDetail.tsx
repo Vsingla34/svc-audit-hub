@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, MapPin, Calendar, Clock, Info, Laptop, 
-  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation, Shield, Lock
+  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation, Shield, Lock, IndianRupee
 } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 import { DashboardLayout, auditorNavItems, adminNavItems } from '@/components/DashboardLayout';
@@ -265,9 +265,15 @@ export default function AssignmentDetail() {
     ? assignment.branch_name 
     : 'Branch details hidden until allotment';
 
-  // LOGIC: ACTIVE IF TODAY OR PAST
   const auditDate = new Date(assignment.audit_date);
   const isActive = isToday(auditDate) || isPast(auditDate);
+
+  // Calculate Total Max Payout
+  const totalPayout = (assignment.fees || 0) + 
+                      (assignment.ope || 0) + 
+                      (assignment.reimbursement_food || 0) + 
+                      (assignment.reimbursement_courier || 0) + 
+                      (assignment.reimbursement_conveyance || 0);
 
   return (
     <DashboardLayout title="Assignment Details" navItems={navItems}>
@@ -321,14 +327,17 @@ export default function AssignmentDetail() {
                 </CardDescription>
               </div>
               <div className="text-right">
-                <div className="text-2xl font-bold text-primary">₹{assignment.fees?.toLocaleString()}</div>
-                <div className="text-sm text-muted-foreground">per man/day</div>
+                <div className="text-2xl font-bold text-primary" title={`Base: ₹${assignment.fees} + Allowances: ₹${totalPayout - (assignment.fees || 0)}`}>
+                  Up to ₹{totalPayout.toLocaleString()}
+                </div>
+                <div className="text-sm text-muted-foreground">per day (max limit)</div>
               </div>
             </div>
           </CardHeader>
           
           <CardContent className="pt-6 grid gap-8 md:grid-cols-3">
             <div className="md:col-span-2 space-y-6">
+              
               <section>
                 <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                   <Info className="h-5 w-5 text-primary" /> Scope & Requirements
@@ -354,10 +363,47 @@ export default function AssignmentDetail() {
                       </p>
                     </div>
                   </div>
-                  <div className="pt-2 border-t">
-                     <span className="text-sm text-muted-foreground">Reimbursement Policy</span>
-                     <p className="font-medium">{assignment.reimbursement || 'None specified'}</p>
-                  </div>
+                </div>
+              </section>
+
+              {/* PAYOUT BREAKDOWN SECTION */}
+              <section>
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                  <IndianRupee className="h-5 w-5 text-primary" /> Payout & Allowances Breakdown
+                </h3>
+                <div className="bg-muted/30 p-4 rounded-lg border grid grid-cols-2 sm:grid-cols-4 gap-4">
+                   <div>
+                      <span className="text-sm text-muted-foreground">Base Fee</span>
+                      <p className="font-medium">₹{assignment.fees?.toLocaleString() || 0}</p>
+                   </div>
+                   {assignment.ope > 0 && (
+                       <div>
+                          <span className="text-sm text-muted-foreground">OPE Limit</span>
+                          <p className="font-medium">₹{assignment.ope?.toLocaleString()}</p>
+                       </div>
+                   )}
+                   {assignment.reimbursement_food > 0 && (
+                       <div>
+                          <span className="text-sm text-muted-foreground">Food Limit</span>
+                          <p className="font-medium">₹{assignment.reimbursement_food?.toLocaleString()}</p>
+                       </div>
+                   )}
+                   {assignment.reimbursement_conveyance > 0 && (
+                       <div>
+                          <span className="text-sm text-muted-foreground">Conveyance</span>
+                          <p className="font-medium">₹{assignment.reimbursement_conveyance?.toLocaleString()}</p>
+                       </div>
+                   )}
+                   {assignment.reimbursement_courier > 0 && (
+                       <div>
+                          <span className="text-sm text-muted-foreground">Courier</span>
+                          <p className="font-medium">₹{assignment.reimbursement_courier?.toLocaleString()}</p>
+                       </div>
+                   )}
+                   <div className="col-span-full pt-2 border-t mt-2">
+                      <span className="text-sm text-muted-foreground">Reimbursement Guidelines</span>
+                      <p className="font-medium">{assignment.reimbursement || 'Standard company policy applies.'}</p>
+                   </div>
                 </div>
               </section>
 

@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Calendar, RefreshCcw, AlertCircle, Upload, FileText, FileSpreadsheet } from 'lucide-react';
+import { Calendar, RefreshCcw, AlertCircle, Upload, FileText, FileSpreadsheet, CheckCircle, Plus, Trash2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Separator } from '@/components/ui/separator';
@@ -22,8 +22,10 @@ export default function AuditorLiveReportPage() {
   
   const [trackingData, setTrackingData] = useState<any>({});
   const [uploading, setUploading] = useState(false);
+  
+  // State to manage the active upload slots. Defaults to [1, 2]
+  const [activeSlots, setActiveSlots] = useState<number[]>([1, 2]);
 
-  // 1. Fetch from shared cache instantly
   const { data: assignments = [], isLoading, refetch } = useQuery({
     queryKey: ['auditor-assignments', user?.id],
     queryFn: async () => {
@@ -40,7 +42,6 @@ export default function AuditorLiveReportPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // 2. Find today's active assignment instantly using useMemo
   const activeReportAssignment = useMemo(() => {
     return assignments.find(a => 
       ['allotted', 'in_progress'].includes(a.status) && 
@@ -48,34 +49,41 @@ export default function AuditorLiveReportPage() {
     );
   }, [assignments]);
 
-  // 3. Sync tracking data to local state for instant UI updates
   useEffect(() => {
     if (activeReportAssignment) {
       setTrackingData(activeReportAssignment.tracking_details || {});
     }
   }, [activeReportAssignment]);
 
+  useEffect(() => {
+    if (trackingData?.reports?.length > 0) {
+      setActiveSlots(prev => {
+         const existingSlots = trackingData.reports.map((r: any) => r.slot);
+         const merged = Array.from(new Set([...prev, 1, 2, ...existingSlots])).sort((a, b) => a - b);
+         if (merged.join(',') !== prev.join(',')) return merged;
+         return prev;
+      });
+    }
+  }, [trackingData?.reports]);
+
   const updateTrackingData = async (newData: any) => {
      if (!activeReportAssignment) return;
      const updated = { ...trackingData, ...newData };
      
-     // Optimistic UI Update
      setTrackingData(updated);
 
      const { error } = await supabase
         .from('assignments')
         .update({ 
            tracking_details: updated,
-           status: 'in_progress' // Set to in_progress once tracking starts
+           status: 'in_progress' 
         })
         .eq('id', activeReportAssignment.id);
         
      if (error) { 
         toast.error("Failed to update report in database"); 
-        // Revert on failure
         setTrackingData(activeReportAssignment.tracking_details || {});
      } else {
-        // Invalidate cache in background to keep other pages synced
         queryClient.invalidateQueries({ queryKey: ['auditor-assignments', user?.id] });
      }
   };
@@ -119,7 +127,7 @@ export default function AuditorLiveReportPage() {
         const currentReports = trackingData.reports || [];
         const otherReports = currentReports.filter((r: any) => r.slot !== slot);
         await updateTrackingData({ reports: [...otherReports, newReport] });
-        toast.success(`Report ${slot} uploaded!`);
+        toast.success(`Report uploaded successfully!`);
      } catch (e:any) { 
         toast.error(e.message || "Upload failed"); 
      } finally { 
@@ -135,14 +143,30 @@ export default function AuditorLiveReportPage() {
       toast.success("File removed");
   };
 
+  const handleAddSlot = () => {
+      setActiveSlots(prev => {
+         const nextSlot = Math.max(2, ...prev) + 1;
+         return [...prev, nextSlot];
+      });
+  };
+
+  const handleRemoveSlot = async (slotToRemove: number) => {
+      const report = getReportBySlot(slotToRemove);
+      if (report) {
+          if(!confirm("This box contains an uploaded file. Removing the box will also delete the file. Continue?")) return;
+          const updatedReports = (trackingData.reports || []).filter((r: any) => r.id !== report.id);
+          await updateTrackingData({ reports: updatedReports });
+      }
+      setActiveSlots(prev => prev.filter(s => s !== slotToRemove));
+  };
+
   const handleCheckOut = async () => {
-     if (!confirm("Are you sure you want to finish this assignment? The admin will review it and finalize your payment.")) return;
+     if (!confirm("Are you sure you want to check out? The admin will review your reports and finalize your payment.")) return;
      
      const { error } = await supabase
         .from('assignments')
         .update({ 
-           status: 'completed', 
-           completed_at: new Date().toISOString(), 
+           status: 'in_progress', // DO NOT set to completed yet!
            tracking_details: { ...trackingData, check_out: { completed: true, timestamp: new Date().toISOString() } } 
         })
         .eq('id', activeReportAssignment.id);
@@ -150,12 +174,12 @@ export default function AuditorLiveReportPage() {
      if (error) {
          toast.error("Check out failed"); 
      } else { 
-         toast.success("Assignment Completed! Awaiting Admin Review."); 
+         toast.success("Check out submitted! Awaiting Admin Review."); 
          queryClient.invalidateQueries({ queryKey: ['auditor-assignments', user?.id] });
      }
   };
 
-  // Logic flags for UI state
+  const isCheckedOut = trackingData?.check_out?.completed;
   const canStart = trackingData?.check_in?.url; 
   const isStarted = trackingData?.is_started;
   const reports = trackingData?.reports || [];
@@ -164,7 +188,12 @@ export default function AuditorLiveReportPage() {
   const canCheckOut = isStarted && allReportsApproved && trackingData?.check_in?.status === 'approved';
 
   const getReportBySlot = (slot: number) => reports.find((r: any) => r.slot === slot);
-  const slotLabels = ["One", "Two", "Three", "Four"];
+
+  const getSlotLabel = (slot: number, index: number) => {
+     if (slot === 1) return "Main report file";
+     if (slot === 2) return "Supporting file";
+     return `Supporting file ${index}`; 
+  };
 
   const getFileIcon = (fileName: string) => {
      if (fileName.endsWith('.csv') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
@@ -297,18 +326,31 @@ export default function AuditorLiveReportPage() {
                         <p className="ml-11 text-sm text-muted-foreground mb-4">Upload the completed assignment files here. The admin must review and approve them before you can check out.</p>
 
                         <div className="ml-11 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {[1, 2, 3, 4].map((slot) => {
+                          {activeSlots.map((slot, index) => {
                             const report = getReportBySlot(slot);
                             
                             return (
-                              <div key={slot} className="border rounded-xl p-4 bg-muted/5 flex flex-col gap-3 min-h-[140px] relative overflow-hidden">
+                              <div key={slot} className="border rounded-xl p-4 bg-muted/5 flex flex-col gap-3 min-h-[140px] relative overflow-hidden group">
                                 <div className="flex justify-between items-center z-10 relative">
-                                   <span className="font-semibold text-sm">Report Slot {slotLabels[slot-1]}</span>
-                                   {report && (
-                                      <Badge variant={report.status === 'approved' ? 'default' : report.status === 'rejected' ? 'destructive' : 'secondary'} className={report.status === 'approved' ? 'bg-green-600' : ''}>
-                                         {report.status}
-                                      </Badge>
-                                   )}
+                                   <span className="font-semibold text-sm">{getSlotLabel(slot, index)}</span>
+                                   
+                                   <div className="flex items-center gap-2">
+                                      {report && (
+                                         <Badge variant={report.status === 'approved' ? 'default' : report.status === 'rejected' ? 'destructive' : 'secondary'} className={report.status === 'approved' ? 'bg-green-600' : ''}>
+                                            {report.status}
+                                         </Badge>
+                                      )}
+                                      
+                                      {slot > 2 && (
+                                         <button 
+                                            onClick={() => handleRemoveSlot(slot)} 
+                                            className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded-md hover:bg-destructive/10" 
+                                            title="Remove this upload box"
+                                         >
+                                            <Trash2 className="h-4 w-4" />
+                                         </button>
+                                      )}
+                                   </div>
                                 </div>
 
                                 {report ? (
@@ -353,18 +395,36 @@ export default function AuditorLiveReportPage() {
                             );
                           })}
                         </div>
+
+                        <div className="ml-11 mt-4">
+                           <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="border-dashed" 
+                              onClick={handleAddSlot}
+                           >
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add more upload box
+                           </Button>
+                        </div>
                      </div>
 
                      <Separator />
 
                      {/* 4. CHECK OUT */}
-                     <div className={`space-y-4 ${!canCheckOut ? 'opacity-50' : ''}`}>
+                     <div className={`space-y-4 ${!canCheckOut && !isCheckedOut ? 'opacity-50' : ''}`}>
                         <div className="flex items-center gap-3 font-semibold text-lg">
                            <div className="h-8 w-8 rounded-full bg-[#4338CA]/10 text-[#4338CA] flex items-center justify-center text-sm font-bold">4</div>
                            Final Check Out
                         </div>
                         <div className="ml-11">
-                           {!canCheckOut ? (
+                           {isCheckedOut ? (
+                              <Alert className="mb-4 bg-blue-50 text-blue-800 border-blue-200 max-w-md">
+                                 <CheckCircle className="h-4 w-4 text-blue-600"/>
+                                 <AlertTitle>Check Out Submitted</AlertTitle>
+                                 <AlertDescription>You have successfully checked out. The admin will now review your reports, process your payment, and finalize the audit.</AlertDescription>
+                              </Alert>
+                           ) : !canCheckOut ? (
                               <div className="bg-muted p-4 rounded-lg text-sm text-muted-foreground mb-4 border max-w-md">
                                  <strong>Action Locked.</strong> You must complete the following before checking out:
                                  <ul className="list-disc pl-5 mt-2 space-y-1">
@@ -374,21 +434,23 @@ export default function AuditorLiveReportPage() {
                                  </ul>
                               </div>
                            ) : (
-                              <Alert className="mb-4 bg-green-50 text-green-800 border-green-200 max-w-md">
-                                 <CheckCircle className="h-4 w-4 text-green-600"/>
-                                 <AlertTitle>Ready for Check Out</AlertTitle>
-                                 <AlertDescription>All steps have been completed and approved by the admin. You may now check out to finalize this audit.</AlertDescription>
+                              <Alert className="mb-4 bg-amber-50 text-amber-800 border-amber-200 max-w-md">
+                                 <AlertCircle className="h-4 w-4 text-amber-600"/>
+                                 <AlertTitle>Ready to Submit</AlertTitle>
+                                 <AlertDescription>All files are approved. Submit your check out to allow the admin to process your payment.</AlertDescription>
                               </Alert>
                            )}
                            
-                           <Button 
-                              size="lg" 
-                              className="w-full sm:w-auto bg-[#4338CA] hover:bg-[#4338CA]/90 font-bold" 
-                              disabled={!canCheckOut} 
-                              onClick={handleCheckOut}
-                           >
-                              Complete Audit & Check Out
-                           </Button>
+                           {!isCheckedOut && (
+                              <Button 
+                                 size="lg" 
+                                 className="w-full sm:w-auto bg-[#4338CA] hover:bg-[#4338CA]/90 font-bold" 
+                                 disabled={!canCheckOut} 
+                                 onClick={handleCheckOut}
+                              >
+                                 Submit Check Out
+                              </Button>
+                           )}
                         </div>
                      </div>
 

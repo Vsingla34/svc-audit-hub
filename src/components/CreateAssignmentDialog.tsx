@@ -329,4 +329,5 @@ export function CreateAssignmentDialog({ onAssignmentCreated }: { onAssignmentCr
       </DialogContent>
     </Dialog>
   );
+  
 }

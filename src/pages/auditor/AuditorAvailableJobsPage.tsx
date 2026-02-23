@@ -123,73 +123,82 @@ export default function AuditorAvailableJobsPage() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredOpenAssignments.map(a => (
-              <Card key={a.id} className="group hover:shadow-xl transition-all duration-300 border-none shadow-md bg-card overflow-hidden flex flex-col h-full relative">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#4338CA] to-[#4338CA]/60" />
-                  <CardHeader className="pb-3 pt-5">
-                      <div className="flex justify-between items-start gap-2">
-                          <Badge variant="outline" className="mb-2 w-fit border-[#4338CA]/20 text-[#4338CA] bg-[#4338CA]/5 uppercase text-[10px] tracking-wider font-semibold">
-                            {a.audit_type}
-                          </Badge>
-                          <Badge variant="secondary" className="bg-[#4338CA]/10 text-[#4338CA] font-bold border border-[#4338CA]/20">
-                            <IndianRupee className="h-3 w-3 mr-1" />{a.fees?.toLocaleString()}/day
-                          </Badge>
-                      </div>
-                      <div className="space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-mono text-muted-foreground">
-                              #{a.assignment_number || a.id.substring(0, 6).toUpperCase()}
-                            </span>
-                          </div>
-                          <CardTitle className="text-lg font-bold leading-tight group-hover:text-[#4338CA] transition-colors flex items-center gap-2">
-                            {a.industry || 'Confidential Client'}
-                            {(!a.industry) && <Shield className="h-3.5 w-3.5 text-muted-foreground/60"/>}
-                          </CardTitle>
-                          <div className="flex items-center text-sm text-muted-foreground pt-1">
-                            <MapPin className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                            {a.city}, {a.state}
-                          </div>
-                      </div>
-                  </CardHeader>
-                  <CardContent className="flex-1 pb-4">
-                      <div className="grid grid-cols-2 gap-3 pt-2">
-                          <div className="bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                              <GraduationCap className="h-3.5 w-3.5" /><span>Qualification</span>
+            {filteredOpenAssignments.map(a => {
+              // Calculate total possible payout including base fees + all allowances
+              const totalPayout = (a.fees || 0) + (a.ope || 0) + (a.reimbursement_food || 0) + (a.reimbursement_courier || 0) + (a.reimbursement_conveyance || 0);
+              
+              return (
+                <Card key={a.id} className="group hover:shadow-xl transition-all duration-300 border-none shadow-md bg-card overflow-hidden flex flex-col h-full relative">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#4338CA] to-[#4338CA]/60" />
+                    <CardHeader className="pb-3 pt-5">
+                        <div className="flex justify-between items-start gap-2">
+                            <Badge variant="outline" className="mb-2 w-fit border-[#4338CA]/20 text-[#4338CA] bg-[#4338CA]/5 uppercase text-[10px] tracking-wider font-semibold">
+                              {a.audit_type}
+                            </Badge>
+                            <Badge 
+                              variant="secondary" 
+                              className="bg-[#4338CA]/10 text-[#4338CA] font-bold border border-[#4338CA]/20"
+                              title={`Base: ₹${a.fees} + Allowances: ₹${totalPayout - (a.fees || 0)}`}
+                            >
+                              <IndianRupee className="h-3 w-3 mr-1" />Up to {totalPayout.toLocaleString()}/day
+                            </Badge>
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] font-mono text-muted-foreground">
+                                #{a.assignment_number || a.id.substring(0, 6).toUpperCase()}
+                              </span>
                             </div>
-                            <div className="text-sm font-medium truncate" title={a.qualification_required}>
-                              {a.qualification_required || 'Any'}
+                            <CardTitle className="text-lg font-bold leading-tight group-hover:text-[#4338CA] transition-colors flex items-center gap-2">
+                              {a.industry || 'Confidential Client'}
+                              {(!a.industry) && <Shield className="h-3.5 w-3.5 text-muted-foreground/60"/>}
+                            </CardTitle>
+                            <div className="flex items-center text-sm text-muted-foreground pt-1">
+                              <MapPin className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                              {a.city}, {a.state}
                             </div>
-                          </div>
-                          <div className="bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                              <Clock className="h-3.5 w-3.5" /><span>Duration</span>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="flex-1 pb-4">
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div className="bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                                <GraduationCap className="h-3.5 w-3.5" /><span>Qualification</span>
+                              </div>
+                              <div className="text-sm font-medium truncate" title={a.qualification_required}>
+                                {a.qualification_required || 'Any'}
+                              </div>
                             </div>
-                            <div className="text-sm font-medium">
-                              {a.duration || 'Flexible'}
+                            <div className="bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                                <Clock className="h-3.5 w-3.5" /><span>Duration</span>
+                              </div>
+                              <div className="text-sm font-medium">
+                                {a.duration || 'Flexible'}
+                              </div>
                             </div>
-                          </div>
-                          <div className="col-span-2 bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Calendar className="h-3.5 w-3.5" /><span>Start Date</span>
+                            <div className="col-span-2 bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <Calendar className="h-3.5 w-3.5" /><span>Start Date</span>
+                              </div>
+                              <div className="text-sm font-medium">
+                                {a.audit_date ? format(new Date(a.audit_date), 'dd MMM yyyy') : 'N/A'}
+                              </div>
                             </div>
-                            <div className="text-sm font-medium">
-                              {a.audit_date ? format(new Date(a.audit_date), 'dd MMM yyyy') : 'N/A'}
-                            </div>
-                          </div>
-                      </div>
-                  </CardContent>
-                  <CardFooter className="pt-0 pb-5 px-6">
-                    <Button 
-                      className="w-full shadow-sm hover:shadow group-hover:bg-[#4338CA] group-hover:text-white transition-all" 
-                      onClick={() => navigate(`/assignment/${a.id}`)}
-                    >
-                      View Details 
-                      <ArrowRight className="h-4 w-4 ml-2 opacity-70 group-hover:translate-x-1 transition-transform" />
-                    </Button>
-                  </CardFooter>
-              </Card>
-            ))}
+                        </div>
+                    </CardContent>
+                    <CardFooter className="pt-0 pb-5 px-6">
+                      <Button 
+                        className="w-full shadow-sm hover:shadow group-hover:bg-[#4338CA] group-hover:text-white transition-all" 
+                        onClick={() => navigate(`/assignment/${a.id}`)}
+                      >
+                        View Details 
+                        <ArrowRight className="h-4 w-4 ml-2 opacity-70 group-hover:translate-x-1 transition-transform" />
+                      </Button>
+                    </CardFooter>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

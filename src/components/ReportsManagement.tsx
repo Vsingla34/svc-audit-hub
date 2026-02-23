@@ -19,21 +19,26 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Eye, FileText, CheckCircle, XCircle, Clock, RefreshCcw, Star, Check } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Eye, FileText, CheckCircle, XCircle, Clock, RefreshCcw, Star, Check, FileCheck } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function ReportsManagement() {
   const [activeAudits, setActiveAudits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // Rating State: Map assignmentId -> rating value
-  const [ratings, setRatings] = useState<Record<string, number>>({});
-  
-  // Dialog States
+  // Reject Dialog
   const [rejectDialog, setRejectDialog] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [targetItem, setTargetItem] = useState<{ type: 'check_in' | 'report', assignmentId: string, reportId?: string } | null>(null);
+
+  // Complete Audit & Payment Dialog
+  const [completeDialog, setCompleteDialog] = useState(false);
+  const [completeData, setCompleteData] = useState<{ id: string, fees: number, totalFees: number }>({ id: '', fees: 0, totalFees: 0 });
+  const [rating, setRating] = useState(0);
+  const [paymentAmount, setPaymentAmount] = useState<number | string>('');
 
   useEffect(() => {
     fetchActiveAudits();
@@ -52,7 +57,6 @@ export function ReportsManagement() {
       if (error) throw error;
       setActiveAudits(data || []);
     } catch (err: any) {
-      console.error("Error:", err);
       toast.error("Failed to load live reports: " + err.message);
     } finally {
       setLoading(false);
@@ -104,12 +108,9 @@ export function ReportsManagement() {
        toast.error("Update failed");
     } else {
        toast.success(`Marked as ${status}`);
-       
-       // Optimistic update
        setActiveAudits(prev => prev.map(a => 
          a.id === assignmentId ? { ...a, tracking_details: updatedTracking } : a
        ));
-
        setRejectDialog(false);
        setRejectReason("");
        setTargetItem(null);
@@ -127,19 +128,41 @@ export function ReportsManagement() {
      updateStatus(targetItem.assignmentId, targetItem.type, 'rejected', rejectReason, targetItem.reportId);
   };
 
-  // --- NEW: Rating Logic ---
-  const handleRatingSelect = (assignmentId: string, value: number) => {
-    setRatings(prev => ({ ...prev, [assignmentId]: value }));
+  const openCompleteDialog = (audit: any) => {
+    // Calculate total possible amount including base fees + all perks/reimbursements
+    const baseFees = audit.fees || 0;
+    const totalFees = baseFees + (audit.ope || 0) + (audit.reimbursement_food || 0) + (audit.reimbursement_courier || 0) + (audit.reimbursement_conveyance || 0);
+    
+    setCompleteData({ id: audit.id, fees: baseFees, totalFees: totalFees });
+    
+    // Set the default payment input to the max total (the admin can adjust it down if actuals were lower)
+    setPaymentAmount(totalFees);
+    setRating(0);
+    setCompleteDialog(true);
   };
 
-  const handleSubmitRating = async (assignmentId: string) => {
-    const rating = ratings[assignmentId];
+  const handleConfirmCompleteAudit = async () => {
     if (!rating) {
-      toast.error("Please select a rating first");
+      toast.error("Please provide a rating for the auditor.");
+      return;
+    }
+    if (paymentAmount === '' || Number(paymentAmount) < 0) {
+      toast.error("Please enter a valid payment amount.");
       return;
     }
 
-    if (!confirm(`Are you sure you want to rate this auditor ${rating} stars and complete the audit?`)) return;
+    const assignment = activeAudits.find(a => a.id === completeData.id);
+    if (!assignment) return;
+
+    // Attach payment and invoice details to tracking_details
+    const updatedTracking = {
+      ...assignment.tracking_details,
+      payment_info: {
+        amount: Number(paymentAmount),
+        status: 'invoice_generated',
+        generated_at: new Date().toISOString()
+      }
+    };
 
     try {
       const { error } = await supabase
@@ -147,21 +170,27 @@ export function ReportsManagement() {
         .update({
           status: 'completed',
           auditor_rating: rating,
-          completed_at: new Date().toISOString()
+          completed_at: new Date().toISOString(),
+          tracking_details: updatedTracking
         })
-        .eq('id', assignmentId);
+        .eq('id', completeData.id);
 
       if (error) throw error;
 
-      toast.success("Audit completed and rated successfully!");
-      // Remove from list since it's no longer active
-      setActiveAudits(prev => prev.filter(a => a.id !== assignmentId));
+      toast.success("Audit completed and invoice generated successfully!");
+      setActiveAudits(prev => prev.filter(a => a.id !== completeData.id));
+      setCompleteDialog(false);
       
     } catch (error: any) {
       toast.error("Failed to complete audit: " + error.message);
     }
   };
-  // ------------------------
+
+  const getSlotLabel = (slot: number, index: number) => {
+    if (slot === 1) return "Main report file";
+    if (slot === 2) return "Supporting file";
+    return `Supporting file ${index}`; 
+  };
 
   if (loading) return <div>Loading live activity...</div>;
 
@@ -180,13 +209,14 @@ export function ReportsManagement() {
                const tracking = audit.tracking_details || {};
                const reports = tracking.reports || [];
                
-               // Check if all reports are approved to enable rating
                const hasReports = reports.length > 0;
                const allReportsApproved = hasReports && reports.every((r: any) => r.status === 'approved');
-               const currentRating = ratings[audit.id] || 0;
+               const isCheckedOut = tracking?.check_out?.completed;
+
+               const sortedReports = [...reports].sort((a: any, b: any) => a.slot - b.slot);
 
                return (
-                  <Card key={audit.id} className="overflow-hidden border-l-4 border-l-primary">
+                  <Card key={audit.id} className="overflow-hidden border-l-4 border-l-primary shadow-sm">
                      <CardHeader className="bg-muted/10 pb-4">
                         <div className="flex justify-between items-start">
                            <div>
@@ -197,8 +227,8 @@ export function ReportsManagement() {
                                 <span>{audit.city}, {audit.state}</span>
                               </CardDescription>
                            </div>
-                           <Badge variant="outline" className={tracking.is_started ? "bg-green-100 text-green-700" : ""}>
-                              {tracking.is_started ? "STARTED" : "NOT STARTED"}
+                           <Badge variant="outline" className={tracking.is_started ? "bg-green-100 text-green-700 font-bold" : ""}>
+                              {tracking.is_started ? "IN PROGRESS" : "NOT STARTED"}
                            </Badge>
                         </div>
                      </CardHeader>
@@ -243,10 +273,10 @@ export function ReportsManagement() {
                               </TableRow>
 
                               {/* REPORTS ROWS */}
-                              {reports.length > 0 ? (
-                                 reports.map((report: any) => (
+                              {sortedReports.length > 0 ? (
+                                 sortedReports.map((report: any, index: number) => (
                                     <TableRow key={report.id}>
-                                       <TableCell className="font-medium">Report File</TableCell>
+                                       <TableCell className="font-medium">{getSlotLabel(report.slot, index + 1)}</TableCell>
                                        <TableCell>
                                           <div className="flex flex-col items-start">
                                              <Button 
@@ -280,13 +310,15 @@ export function ReportsManagement() {
                               
                               {/* CHECK OUT STATUS */}
                               <TableRow className="bg-muted/5">
-                                 <TableCell className="font-medium">Check Out</TableCell>
+                                 <TableCell className="font-medium">Auditor Status</TableCell>
                                  <TableCell colSpan={2}>
-                                    {tracking.check_out?.completed ? (
+                                    {isCheckedOut ? (
                                        <div className="flex items-center text-green-600 font-medium">
-                                          <CheckCircle className="h-4 w-4 mr-2" /> Completed at {new Date(tracking.check_out.timestamp).toLocaleTimeString()}
+                                          <CheckCircle className="h-4 w-4 mr-2" /> Auditor requested Check Out at {new Date(tracking.check_out.timestamp).toLocaleTimeString()}
                                        </div>
-                                    ) : "Pending completion"}
+                                    ) : (
+                                       <span className="text-muted-foreground">Waiting for auditor to check out</span>
+                                    )}
                                  </TableCell>
                                  <TableCell></TableCell>
                               </TableRow>
@@ -294,50 +326,29 @@ export function ReportsManagement() {
                         </Table>
                      </CardContent>
 
-                     {/* RATING FOOTER */}
-                     <CardFooter className={`border-t p-4 flex flex-col sm:flex-row justify-between items-center gap-4 transition-colors ${allReportsApproved ? "bg-blue-50/50" : "bg-muted/10"}`}>
+                     {/* FINALIZATION FOOTER */}
+                     <CardFooter className={`border-t p-4 flex flex-col sm:flex-row justify-between items-center gap-4 transition-colors ${allReportsApproved && isCheckedOut ? "bg-blue-50/50" : "bg-muted/10"}`}>
                         <div className="text-sm font-medium flex items-center gap-2">
-                           {allReportsApproved ? (
+                           {allReportsApproved && isCheckedOut ? (
                               <span className="text-blue-700 flex items-center">
                                  <CheckCircle className="h-4 w-4 mr-2" />
-                                 Reports approved. Please rate to complete.
+                                 Auditor is checked out and reports are approved.
                               </span>
                            ) : (
                               <span className="text-muted-foreground flex items-center">
                                  <Clock className="h-4 w-4 mr-2" />
-                                 Approve all reports to enable rating & completion
+                                 Approve all reports & wait for check out to finalize.
                               </span>
                            )}
                         </div>
 
-                        {allReportsApproved && (
-                           <div className="flex items-center gap-4">
-                              <div className="flex gap-1">
-                                 {[1, 2, 3, 4, 5].map((star) => (
-                                    <button
-                                       key={star}
-                                       onClick={() => handleRatingSelect(audit.id, star)}
-                                       className="focus:outline-none transition-transform hover:scale-110"
-                                    >
-                                       <Star 
-                                          className={`h-6 w-6 ${
-                                             star <= currentRating 
-                                                ? "fill-yellow-400 text-yellow-400" 
-                                                : "fill-transparent text-gray-300 hover:text-yellow-200"
-                                          }`} 
-                                       />
-                                    </button>
-                                 ))}
-                              </div>
-                              <Button 
-                                 size="sm" 
-                                 onClick={() => handleSubmitRating(audit.id)}
-                                 disabled={currentRating === 0}
-                                 className="bg-blue-600 hover:bg-blue-700 text-white"
-                              >
-                                 <Check className="h-4 w-4 mr-1" /> Complete Audit
-                              </Button>
-                           </div>
+                        {allReportsApproved && isCheckedOut && (
+                           <Button 
+                              onClick={() => openCompleteDialog(audit)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                           >
+                              <FileCheck className="h-4 w-4 mr-2" /> Finalize & Generate Invoice
+                           </Button>
                         )}
                      </CardFooter>
                   </Card>
@@ -346,6 +357,7 @@ export function ReportsManagement() {
          </div>
       )}
 
+      {/* Reject File Dialog */}
       <Dialog open={rejectDialog} onOpenChange={setRejectDialog}>
          <DialogContent>
             <DialogHeader><DialogTitle>Reject Item</DialogTitle></DialogHeader>
@@ -356,6 +368,62 @@ export function ReportsManagement() {
             <DialogFooter>
                <Button variant="outline" onClick={() => setRejectDialog(false)}>Cancel</Button>
                <Button variant="destructive" onClick={handleConfirmReject} disabled={!rejectReason.trim()}>Reject</Button>
+            </DialogFooter>
+         </DialogContent>
+      </Dialog>
+
+      {/* Complete Audit & Payment Dialog */}
+      <Dialog open={completeDialog} onOpenChange={setCompleteDialog}>
+         <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+               <DialogTitle>Finalize Audit & Invoice</DialogTitle>
+               <DialogDescription>
+                  Rate the auditor and confirm the final payment amount. This will close the audit and generate an invoice.
+               </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-6 py-4">
+               <div className="space-y-2">
+                  <Label>Rate Auditor Performance</Label>
+                  <div className="flex gap-1 pt-1">
+                     {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                           key={star}
+                           onClick={() => setRating(star)}
+                           className="focus:outline-none transition-transform hover:scale-110"
+                        >
+                           <Star 
+                              className={`h-8 w-8 ${
+                                 star <= rating 
+                                    ? "fill-yellow-400 text-yellow-400" 
+                                    : "fill-transparent text-gray-300 hover:text-yellow-200"
+                              }`} 
+                           />
+                        </button>
+                     ))}
+                  </div>
+               </div>
+               
+               <div className="space-y-2">
+                  <Label htmlFor="payment">Final Payment Amount (₹)</Label>
+                  <Input 
+                     id="payment" 
+                     type="number" 
+                     placeholder="e.g. 5000"
+                     value={paymentAmount} 
+                     onChange={(e) => setPaymentAmount(e.target.value)}
+                  />
+                  {/* Detailed breakdown for Admin's context */}
+                  <p className="text-xs text-muted-foreground mt-1">
+                     Original base fees: ₹{completeData.fees.toLocaleString()} <br/>
+                     Max including allowances: ₹{completeData.totalFees.toLocaleString()}
+                  </p>
+               </div>
+            </div>
+            <DialogFooter>
+               <Button variant="outline" onClick={() => setCompleteDialog(false)}>Cancel</Button>
+               <Button onClick={handleConfirmCompleteAudit} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  Confirm & Generate Invoice
+               </Button>
             </DialogFooter>
          </DialogContent>
       </Dialog>
