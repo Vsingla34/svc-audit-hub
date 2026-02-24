@@ -3,6 +3,8 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { NotificationBell } from '@/components/NotificationBell';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
+import { Button } from '@/components/ui/button';
 import {
   Sidebar,
   SidebarContent,
@@ -34,6 +36,7 @@ import {
   ChevronRight,
   Landmark,
   Radio,
+  BellRing,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -223,6 +226,9 @@ export function DashboardLayout({
   onTabChange 
 }: DashboardLayoutProps) {
   const { userRole, isProfileComplete } = useAuth();
+  
+  // --- Push Notification Hook ---
+  const { requestPermissionAndGetToken, permissionStatus } = usePushNotifications();
 
   const filteredNavItems = (userRole === 'auditor' && !isProfileComplete)
     ? navItems.filter(item => item.href === '/profile-setup') 
@@ -241,10 +247,35 @@ export function DashboardLayout({
               </SidebarTrigger>
               
               <div className="flex-1">
-                <h1 className="font-heading text-xl font-semibold text-foreground">{title}</h1>
+                <h1 className="font-heading text-xl font-semibold text-foreground truncate">{title}</h1>
               </div>
               
               <div className="flex items-center gap-3">
+                {/* Manual Push Notification Button */}
+                {permissionStatus === 'default' && (
+                  <Button 
+                    onClick={requestPermissionAndGetToken} 
+                    variant="outline" 
+                    size="sm"
+                    className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 gap-2 shadow-sm animate-pulse hidden sm:flex"
+                  >
+                    <BellRing className="h-4 w-4" />
+                    <span>Enable Notifications</span>
+                  </Button>
+                )}
+                
+                {/* Mobile version of the button (icon only) */}
+                {permissionStatus === 'default' && (
+                  <Button 
+                    onClick={requestPermissionAndGetToken} 
+                    variant="outline" 
+                    size="icon"
+                    className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm animate-pulse sm:hidden h-9 w-9"
+                  >
+                    <BellRing className="h-4 w-4" />
+                  </Button>
+                )}
+
                 <NotificationBell />
               </div>
             </div>
@@ -280,6 +311,6 @@ export const auditorNavItems: NavItem[] = [
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Bank & KYC', icon: Landmark, href: '/bank-kyc' },
   { title: 'Available Jobs', icon: Briefcase, href: '/auditor/available-jobs', activeId: 'available-jobs' },
-  { title: 'My Jobs', icon: FileCheck, href: '/auditor/assignments', activeId: 'my-jobs' }, // Renamed and changed activeId
+  { title: 'My Jobs', icon: FileCheck, href: '/auditor/assignments', activeId: 'my-jobs' }, 
   { title: 'Payments', icon: DollarSign, href: '/payments' },
 ];
