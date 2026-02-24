@@ -71,6 +71,12 @@ function AppSidebar({
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
 
+  // --- FIXED LOGOUT HANDLER ---
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
+
   const { data: profileData } = useQuery({
     queryKey: ['sidebar-user-profile', user?.id],
     queryFn: async () => {
@@ -199,7 +205,7 @@ function AppSidebar({
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  onClick={signOut}
+                  onClick={handleSignOut}
                   tooltip="Sign Out"
                   className={cn(
                     "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group",
