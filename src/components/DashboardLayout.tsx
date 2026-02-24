@@ -72,9 +72,15 @@ function AppSidebar({
   const collapsed = state === 'collapsed';
 
   // --- FIXED LOGOUT HANDLER ---
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/auth');
+ const handleSignOut = async () => {
+    try {
+      await signOut(); // Attempt to notify the server
+    } catch (error) {
+      console.warn("Supabase server logout failed (likely an expired token). Forcing local logout.");
+    } finally {
+      // The 'finally' block GUARANTEES this runs, even if the server threw a 403 error
+      navigate('/auth'); 
+    }
   };
 
   const { data: profileData } = useQuery({
