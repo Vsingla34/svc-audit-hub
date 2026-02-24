@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { NotificationBell } from '@/components/NotificationBell';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   Sidebar,
   SidebarContent,
@@ -37,6 +38,7 @@ import {
   Landmark,
   Radio,
   BellRing,
+  BellOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -71,20 +73,17 @@ function AppSidebar({
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
 
-  // --- FIXED LOGOUT HANDLER ---
- const handleSignOut = async () => {
+  const handleSignOut = async () => {
     try {
-      await signOut(); // Try the polite server logout
+      await signOut(); 
     } catch (error) {
       console.warn("Server logout failed. Forcing local logout.");
     } finally {
-      // 1. Manually nuke any leftover Supabase tokens from the phone's storage
       Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('sb-')) {
+        if (key.startsWith('sb-') || key === 'current_device_fcm_token') {
           localStorage.removeItem(key);
         }
       });
-     
       window.location.href = '/auth';
     }
   };
@@ -128,21 +127,13 @@ function AppSidebar({
   const avatarUrl = profileData?.avatarUrl;
 
   const getInitials = (name: string) => {
-    return name
-      ?.split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2) || 'U';
+    return name?.split(' ').map((n) => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
   };
 
   return (
     <Sidebar collapsible="icon" className="border-r-0 bg-[#4338CA] text-white" variant="sidebar">
       <SidebarContent className="pt-6 px-3 bg-[#4338CA]">
-        <div className={cn(
-          "flex items-center gap-3 px-2 mb-8 transition-all duration-300",
-          collapsed ? "justify-center" : "justify-start"
-        )}>
+        <div className={cn("flex items-center gap-3 px-2 mb-8 transition-all duration-300", collapsed ? "justify-center" : "justify-start")}>
           <Avatar className="h-10 w-10 border-2 border-white/20">
             <AvatarImage src={avatarUrl || ''} alt={fullName} className="object-cover" />
             <AvatarFallback className="bg-white/10 text-white font-semibold">
@@ -152,27 +143,19 @@ function AppSidebar({
           
           {!collapsed && (
             <div className="flex flex-col overflow-hidden">
-              <span className="font-heading text-sm font-semibold text-white truncate">
-                {fullName}
-              </span>
-              <span className="text-xs text-white/60 truncate" title={user?.email}>
-                {user?.email}
-              </span>
+              <span className="font-heading text-sm font-semibold text-white truncate">{fullName}</span>
+              <span className="text-xs text-white/60 truncate" title={user?.email}>{user?.email}</span>
             </div>
           )}
         </div>
 
         <SidebarGroup>
-          <SidebarGroupLabel className={cn(
-            "text-white/50 text-xs font-medium uppercase tracking-wider mb-2",
-            collapsed && "sr-only"
-          )}>
+          <SidebarGroupLabel className={cn("text-white/50 text-xs font-medium uppercase tracking-wider mb-2", collapsed && "sr-only")}>
             Menu
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
               {navItems.map((item) => {
-                // Determine active state by exact ID match or falling back to URL matching
                 const itemActiveId = item.activeId || item.title.toLowerCase().replace(/\s+/g, '-');
                 const isActive = activeTab ? activeTab === itemActiveId : location.pathname.includes(item.href || '');
                 
@@ -180,13 +163,9 @@ function AppSidebar({
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
                       onClick={() => {
-                        if (item.href) {
-                          navigate(item.href);
-                        } else if (item.onClick) {
-                          item.onClick();
-                        } else if (onTabChange) {
-                          onTabChange(itemActiveId);
-                        }
+                        if (item.href) navigate(item.href);
+                        else if (item.onClick) item.onClick();
+                        else if (onTabChange) onTabChange(itemActiveId);
                       }}
                       tooltip={item.title}
                       className={cn(
@@ -197,13 +176,8 @@ function AppSidebar({
                       )}
                     >
                       <item.icon className="h-4.5 w-4.5 shrink-0 transition-colors" />
-                      
-                      <span className={cn("text-sm flex-1", collapsed && "sr-only")}>
-                        {item.title}
-                      </span>
-                      {!collapsed && isActive && (
-                        <ChevronRight className="h-4 w-4 text-[#4338CA]/60" />
-                      )}
+                      <span className={cn("text-sm flex-1", collapsed && "sr-only")}>{item.title}</span>
+                      {!collapsed && isActive && <ChevronRight className="h-4 w-4 text-[#4338CA]/60" />}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -219,10 +193,7 @@ function AppSidebar({
                 <SidebarMenuButton
                   onClick={handleSignOut}
                   tooltip="Sign Out"
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group",
-                    "text-white/70 hover:bg-red-500 hover:text-white"
-                  )}
+                  className={cn("flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group", "text-white/70 hover:bg-red-500 hover:text-white")}
                 >
                   <LogOut className="h-4.5 w-4.5 shrink-0 transition-colors" />
                   <span className={cn("text-sm font-medium", collapsed && "sr-only")}>Sign Out</span>
@@ -236,21 +207,20 @@ function AppSidebar({
   );
 }
 
-export function DashboardLayout({ 
-  children, 
-  title, 
-  navItems, 
-  activeTab, 
-  onTabChange 
-}: DashboardLayoutProps) {
+export function DashboardLayout({ children, title, navItems, activeTab, onTabChange }: DashboardLayoutProps) {
   const { userRole, isProfileComplete } = useAuth();
-  
-  // --- Push Notification Hook ---
   const { requestPermissionAndGetToken, permissionStatus } = usePushNotifications();
 
   const filteredNavItems = (userRole === 'auditor' && !isProfileComplete)
     ? navItems.filter(item => item.href === '/profile-setup') 
     : navItems;
+
+  const handleDeniedClick = () => {
+    toast.error("Notifications Blocked", {
+      description: "Please tap the lock icon (🔒) near your web address bar, change Notifications to 'Allow', and refresh the page.",
+      duration: 8000,
+    });
+  };
 
   return (
     <SidebarProvider>
@@ -269,28 +239,35 @@ export function DashboardLayout({
               </div>
               
               <div className="flex items-center gap-3">
-                {/* Manual Push Notification Button */}
+                
+                {/* 1. Default State: Ask for Permission */}
                 {permissionStatus === 'default' && (
-                  <Button 
-                    onClick={requestPermissionAndGetToken} 
-                    variant="outline" 
-                    size="sm"
-                    className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 gap-2 shadow-sm animate-pulse hidden sm:flex"
-                  >
+                  <Button onClick={requestPermissionAndGetToken} variant="outline" size="sm" className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 gap-2 shadow-sm animate-pulse">
                     <BellRing className="h-4 w-4" />
-                    <span>Enable Notifications</span>
+                    <span className="hidden sm:inline">Enable Notifications</span>
                   </Button>
                 )}
-                
-                {/* Mobile version of the button (icon only) */}
-                {permissionStatus === 'default' && (
+
+                {/* 2. Denied State: Tell them how to unblock it */}
+                {permissionStatus === 'denied' && (
+                  <Button onClick={handleDeniedClick} variant="outline" size="sm" className="bg-red-50 text-red-700 border-red-200 hover:bg-red-100 gap-2 shadow-sm">
+                    <BellOff className="h-4 w-4" />
+                    <span className="hidden sm:inline">Unblock Notifications</span>
+                  </Button>
+                )}
+
+                {/* 3. Unsupported State: iPhone/Safari without App Install */}
+                {permissionStatus === 'unsupported' && (
                   <Button 
-                    onClick={requestPermissionAndGetToken} 
+                    onClick={() => toast.info("App Install Required", { 
+                      description: "To enable notifications on iPhone, tap the Share icon and select 'Add to Home Screen'. Open the app from your home screen to enable."
+                    })} 
                     variant="outline" 
-                    size="icon"
-                    className="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 shadow-sm animate-pulse sm:hidden h-9 w-9"
+                    size="sm" 
+                    className="bg-gray-50 text-gray-700 border-gray-200 gap-2 shadow-sm"
                   >
-                    <BellRing className="h-4 w-4" />
+                    <BellOff className="h-4 w-4 text-gray-400" />
+                    <span className="hidden sm:inline">Not Supported</span>
                   </Button>
                 )}
 
@@ -322,7 +299,7 @@ export const adminNavItems: NavItem[] = [
   { title: 'Payments', icon: DollarSign, href: '/payments' },
 ];
 
-// AUDITOR MENU WILL BE UPDATED WHEN WE SEPARATE IT
+// AUDITOR MENU
 export const auditorNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/auditor/overview', activeId: 'overview' },
   { title: 'Live Report', icon: Radio, href: '/auditor/live-report', activeId: 'live-report' },

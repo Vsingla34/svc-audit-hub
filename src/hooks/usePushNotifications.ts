@@ -62,7 +62,6 @@ export function usePushNotifications() {
             .from('profiles')
             .update({ fcm_token: token })
             .eq('id', user.id);
-
           if (error) {
             console.error("Error saving FCM token to Supabase:", error);
           }
