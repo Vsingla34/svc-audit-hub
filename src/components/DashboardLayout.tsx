@@ -74,12 +74,18 @@ function AppSidebar({
   // --- FIXED LOGOUT HANDLER ---
  const handleSignOut = async () => {
     try {
-      await signOut(); // Attempt to notify the server
+      await signOut(); // Try the polite server logout
     } catch (error) {
-      console.warn("Supabase server logout failed (likely an expired token). Forcing local logout.");
+      console.warn("Server logout failed. Forcing local logout.");
     } finally {
-      // The 'finally' block GUARANTEES this runs, even if the server threw a 403 error
-      navigate('/auth'); 
+      // 1. Manually nuke any leftover Supabase tokens from the phone's storage
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+     
+      window.location.href = '/auth';
     }
   };
 
