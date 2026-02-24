@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { messaging, firebaseConfig } from '@/lib/firebase';
 import { getToken, onMessage } from 'firebase/messaging';
 import { supabase } from '@/integrations/supabase/client';
@@ -7,16 +7,35 @@ import { toast } from 'sonner';
 
 export function usePushNotifications() {
   const { user } = useAuth();
-  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  const hasFetchedRef = useRef(false);
 
   useEffect(() => {
-    if ('Notification' in window) {
-      setPermissionStatus(Notification.permission);
+    // 1. Check if the device/browser actually supports Push Notifications
+    if (!('Notification' in window)) {
+      setPermissionStatus('unsupported');
+      return;
     }
-  }, []);
+
+    // 2. Read the current browser permission
+    const currentPermission = Notification.permission;
+    setPermissionStatus(currentPermission);
+
+    // 3. THE AUTO-SYNC: If this new device already has permission granted, 
+    // we silently grab its token and overwrite the database to make it the active device!
+    if (currentPermission === 'granted' && user && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      requestPermissionAndGetToken();
+    }
+  }, [user]);
 
   const requestPermissionAndGetToken = async () => {
     try {
+      if (!('Notification' in window)) {
+        toast.error("Your device/browser does not support push notifications.");
+        return;
+      }
+
       if (!messaging) throw new Error("Firebase messaging not initialized");
 
       const permission = await Notification.requestPermission();
@@ -25,19 +44,20 @@ export function usePushNotifications() {
       if (permission === 'granted') {
         const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
 
-        // Pass the ENV config to the service worker securely via URL parameters
+        // Pass config securely to the background worker
         const configStr = encodeURIComponent(JSON.stringify(firebaseConfig));
         const registration = await navigator.serviceWorker.register(`/firebase-messaging-sw.js?config=${configStr}`);
 
-        // Get the token using the custom registered service worker
+        // Generate the token for THIS specific device
         const token = await getToken(messaging, { 
             vapidKey,
             serviceWorkerRegistration: registration 
         });
 
         if (token && user) {
-          console.log("FCM Token obtained");
+          console.log("FCM Token obtained for this device!");
           
+          // OVERWRITE the old device's token in the profiles table
           const { error } = await supabase
             .from('profiles')
             .update({ fcm_token: token })
@@ -47,19 +67,19 @@ export function usePushNotifications() {
             console.error("Error saving FCM token to Supabase:", error);
           }
         }
-      } else {
-        console.warn("Notification permission denied by user.");
+      } else if (permission === 'denied') {
+        toast.error("Notifications are blocked in your browser settings.");
       }
     } catch (error) {
       console.error("Failed to get FCM token:", error);
     }
   };
 
+  // Listen for active foreground messages
   useEffect(() => {
     if (!messaging) return;
 
     const unsubscribe = onMessage(messaging, (payload) => {
-      console.log('Received foreground message: ', payload);
       if (payload.notification) {
          toast(payload.notification.title, {
             description: payload.notification.body,
@@ -67,9 +87,7 @@ export function usePushNotifications() {
       }
     });
 
-    return () => {
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, []);
 
   return { requestPermissionAndGetToken, permissionStatus };
