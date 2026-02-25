@@ -45,8 +45,9 @@ export function usePushNotifications() {
         const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
 
         // Pass config securely to the background worker
-        const configStr = encodeURIComponent(JSON.stringify(firebaseConfig));
-        const registration = await navigator.serviceWorker.register(`/firebase-messaging-sw.js?config=${configStr}`);
+       
+        
+        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
 
         // Generate the token for THIS specific device
         const token = await getToken(messaging, { 

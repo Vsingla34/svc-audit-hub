@@ -1,32 +1,33 @@
-// Import Firebase background scripts
-importScripts('https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.8.1/firebase-messaging-compat.js');
+// This file must remain standard JavaScript (not TypeScript)
 
-// Extract the dynamic configuration passed from the React app
-const urlParams = new URLSearchParams(location.search);
-const configStr = urlParams.get('config');
+// 1. Import Firebase libraries for the background worker
+importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-if (configStr) {
-  const firebaseConfig = JSON.parse(configStr);
-  
-  // Initialize the background app with dynamic env config
-  firebase.initializeApp(firebaseConfig);
-  
-  // Retrieve background messaging
-  const messaging = firebase.messaging();
-  
-  // Listen for background messages
-  messaging.onBackgroundMessage((payload) => {
-    console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    
-    const notificationTitle = payload.notification?.title || 'StockCheck360 Alert';
-    const notificationOptions = {
-      body: payload.notification?.body,
-      icon: '/vite.svg', // Change this to your actual app logo
-    };
-  
-    self.registration.showNotification(notificationTitle, notificationOptions);
-  });
-} else {
-    console.error('[firebase-messaging-sw.js] Firebase configuration not found in URL parameters.');
-}
+// 2. Initialize Firebase (Replace these with your actual Firebase config keys!)
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+// 3. The Background Listener: This wakes up your phone when the app is closed!
+messaging.onBackgroundMessage((payload) => {
+  console.log('[Service Worker] Received background message ', payload);
+
+  const notificationTitle = payload.notification.title || 'New Notification';
+  const notificationOptions = {
+    body: payload.notification.body || 'You have a new update.',
+    icon: '/favicon.ico', // Shows your app's icon on the notification
+    badge: '/favicon.ico', // Shows the small icon on Android status bar
+    data: payload.data
+  };
+
+  self.registration.showNotification(notificationTitle, notificationOptions);
+});

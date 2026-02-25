@@ -75,7 +75,7 @@ export function CreateAssignmentDialog({ onAssignmentCreated }: { onAssignmentCr
     setFormData({ ...formData, audit_type: value });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       toast.error("You must be logged in to create an assignment.");
@@ -102,7 +102,6 @@ export function CreateAssignmentDialog({ onAssignmentCreated }: { onAssignmentCr
         qualification_required: formData.qualification_required || null,
         additional_info: formData.additional_info || null,
         
-        // Payout Details
         fees: Number(formData.fees) || 0,
         ope: Number(formData.ope) || 0,
         reimbursement: formData.reimbursement || null,
@@ -110,26 +109,59 @@ export function CreateAssignmentDialog({ onAssignmentCreated }: { onAssignmentCr
         reimbursement_courier: Number(formData.reimbursement_courier) || 0,
         reimbursement_conveyance: Number(formData.reimbursement_conveyance) || 0,
 
-        // Asset Requirements (Syncing both laptop columns just in case)
         requires_smartphone: formData.requires_smartphone,
         requires_laptop: formData.requires_laptop,
         laptop_required: formData.requires_laptop, 
         requires_bike: formData.requires_bike,
 
-        // System Fields
         status: 'open',
-        created_by: user.id // Mandatory in your schema
+        created_by: user.id 
       };
 
-      const { error } = await supabase.from('assignments').insert([payload]);
+      // 1. Insert assignment AND ask Supabase to return the newly created record (.select().single())
+      const { data: newAssignment, error } = await supabase
+        .from('assignments')
+        .insert([payload])
+        .select()
+        .single();
 
       if (error) throw error;
 
-      toast.success("Assignment created successfully!");
+      // --- NEW NOTIFICATION LOGIC START ---
+      
+      // 2. Find all eligible auditors in this state
+      const { data: auditors } = await supabase
+        .from('auditor_profiles')
+        .select('user_id')
+        .eq('base_state', formData.state);
+
+      // 3. If we found auditors, insert a notification for each of them
+      if (auditors && auditors.length > 0) {
+        const notificationsToInsert = auditors.map(auditor => ({
+          user_id: auditor.user_id,
+          title: 'New Assignment Available',
+          message: `A new ${formData.audit_type} assignment is available in ${formData.city}, ${formData.state}.`,
+          type: 'info',
+          related_assignment_id: newAssignment.id
+        }));
+
+        // Insert into the notifications table to trigger the Webhook -> Vercel -> Firebase Push!
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert(notificationsToInsert);
+          
+        if (notifError) {
+          console.error("Warning: Assignment created, but failed to send notifications:", notifError);
+        }
+      }
+      
+      // --- NEW NOTIFICATION LOGIC END ---
+
+      toast.success("Assignment created & notifications sent!");
       setOpen(false);
       onAssignmentCreated(); 
       
-      // Reset form on success
+      // Reset form
       setFormData({
         client_name: '', branch_name: '', audit_type: '', industry: '', duration: '', qualification_required: '',
         address: '', state: '', city: '', pincode: '', audit_date: '', deadline_date: '', additional_info: '',
