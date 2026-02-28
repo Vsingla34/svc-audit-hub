@@ -1,7 +1,7 @@
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-
+// 1. Initialize Firebase FIRST
 firebase.initializeApp({
   apiKey: "AIzaSyB_Bv6PVbPuThrXImzh5vtKfX6NKsiZqqw",
   authDomain: "audit-flow-stockcheck360.firebaseapp.com",
@@ -11,23 +11,19 @@ firebase.initializeApp({
   appId: "1:17452550996:web:433fab03a3c780604c96c1"
 });
 
+// 2. Define the messaging variable SECOND
+const messaging = firebase.messaging();
 
-
-// Manually catch the data and force the OS to show it
+// 3. Use the variable THIRD
 messaging.onBackgroundMessage((payload) => {
   console.log('Background message received: ', payload);
   
-  const title = payload.data.title || 'StockCheck360 Update';
+  const title = payload.data?.title || 'StockCheck360 Update';
   const options = {
-    body: payload.data.body || 'You have a new notification.',
-    icon: '/favicon.png', 
-    requireInteraction: true
+    body: payload.data?.body || 'You have a new notification.',
+    icon: '/favicon.ico', 
+    requireInteraction: true 
   };
 
   return self.registration.showNotification(title, options);
 });
-
-
-
-const messaging = firebase.messaging();
-
