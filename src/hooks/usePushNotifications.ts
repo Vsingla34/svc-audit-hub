@@ -26,7 +26,6 @@ export function usePushNotifications() {
     }
   }, [user]);
 
-  // ✅ Silently gets and saves the token without asking for permission again
   const syncToken = async () => {
     try {
       if (!messaging) return;
@@ -41,7 +40,6 @@ export function usePushNotifications() {
         scope: '/'
       });
 
-      // Wait for the service worker to be ready
       await navigator.serviceWorker.ready;
 
       const token = await getToken(messaging, {
@@ -63,7 +61,6 @@ export function usePushNotifications() {
     }
   };
 
-  // ✅ Called when user explicitly clicks "Enable Notifications"
   const requestPermissionAndGetToken = async () => {
     try {
       if (!('Notification' in window) || !('serviceWorker' in navigator)) {
@@ -124,23 +121,41 @@ export function usePushNotifications() {
   };
 
   // ✅ Handles notifications when app is OPEN (foreground)
+  // Shows BOTH a native OS banner AND an in-app toast
   useEffect(() => {
     if (!messaging) return;
 
-    const unsubscribe = onMessage(messaging, (payload) => {
+    const unsubscribe = onMessage(messaging, async (payload) => {
       console.log('[App] Foreground message received:', payload);
 
-      // Use notification block if present, fall back to data
       const title = payload.notification?.title || payload.data?.title || 'New Update';
       const body = payload.notification?.body || payload.data?.body || 'Check the app.';
       const assignmentId = payload.data?.assignment_id;
+      const targetUrl = assignmentId ? `/assignments/${assignmentId}` : '/';
 
+      // 1. ✅ Show native OS notification banner via service worker
+      //    This makes the phone banner drop down even while the app is open
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, {
+          body,
+          icon: '/favicon.ico',
+          badge: '/favicon.ico',
+          vibrate: [200, 100, 200],
+          requireInteraction: false,
+          data: { url: targetUrl }
+        });
+      } catch (err) {
+        console.error('[App] Failed to show native notification:', err);
+      }
+
+      // 2. ✅ Also show in-app toast as a secondary indicator
       toast(title, {
         description: body,
         action: assignmentId
           ? {
               label: 'View',
-              onClick: () => window.location.href = `/assignments/${assignmentId}`
+              onClick: () => window.location.href = targetUrl
             }
           : undefined,
         duration: 6000
