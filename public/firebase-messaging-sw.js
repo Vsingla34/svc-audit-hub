@@ -13,7 +13,19 @@ firebase.initializeApp({
 
 
 
+// Manually catch the data and force the OS to show it
+messaging.onBackgroundMessage((payload) => {
+  console.log('Background message received: ', payload);
+  
+  const title = payload.data.title || 'StockCheck360 Update';
+  const options = {
+    body: payload.data.body || 'You have a new notification.',
+    icon: '/favicon.png', 
+    requireInteraction: true
+  };
 
+  return self.registration.showNotification(title, options);
+});
 
 
 

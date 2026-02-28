@@ -50,15 +50,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ message: 'User has no FCM token. Notification saved to DB only.' });
     }
 
-    // 5. Send using modern Firebase Admin SDK
+
     const message = {
-      token: profile.fcm_token,
-      notification: {
-        title: notification.title,
-        body: notification.message,
-      },
+      tokens: deviceTokens, 
+      
       data: {
-        // Firebase data payloads MUST be strings
+        title: String(notification.title || "New Update"),
+        body: String(notification.message || "Check the app for details"),
         assignment_id: String(notification.related_assignment_id || "")
       }
     };

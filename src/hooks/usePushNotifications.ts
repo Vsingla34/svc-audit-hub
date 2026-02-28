@@ -75,14 +75,14 @@ export function usePushNotifications() {
     }
   };
 
-  // Listen for active foreground messages
+ 
   useEffect(() => {
     if (!messaging) return;
 
     const unsubscribe = onMessage(messaging, (payload) => {
-      if (payload.notification) {
-         toast(payload.notification.title, {
-            description: payload.notification.body,
+      if (payload.data) {
+         toast(payload.data.title, {
+            description: payload.data.body,
          });
       }
     });
