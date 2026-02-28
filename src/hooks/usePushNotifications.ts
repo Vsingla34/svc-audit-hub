@@ -19,7 +19,6 @@ export function usePushNotifications() {
     const currentPermission = Notification.permission;
     setPermissionStatus(currentPermission);
 
-    // Auto-sync: if permission already granted on this device, silently refresh token
     if (currentPermission === 'granted' && user && !hasFetchedRef.current) {
       hasFetchedRef.current = true;
       syncToken();
@@ -32,28 +31,23 @@ export function usePushNotifications() {
 
       const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
       if (!vapidKey) {
-        console.error("VITE_FIREBASE_KEY is missing from environment variables");
+        console.error("VITE_FIREBASE_KEY is missing");
         return;
       }
 
       const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
         scope: '/'
       });
-
       await navigator.serviceWorker.ready;
 
-      const token = await getToken(messaging, {
-        vapidKey,
-        serviceWorkerRegistration: registration
-      });
+      const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
 
       if (token && user) {
-        console.log("FCM Token synced for this device.");
+        console.log("FCM Token synced.");
         const { error } = await supabase
           .from('profiles')
           .update({ fcm_token: token })
           .eq('id', user.id);
-
         if (error) console.error("Error saving FCM token:", error);
       }
     } catch (error) {
@@ -67,7 +61,6 @@ export function usePushNotifications() {
         toast.error("Your browser does not support push notifications.");
         return;
       }
-
       if (!messaging) {
         toast.error("Notification service failed to initialize.");
         return;
@@ -76,7 +69,6 @@ export function usePushNotifications() {
       const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
       if (!vapidKey) {
         toast.error("Notification configuration is missing.");
-        console.error("VITE_FIREBASE_KEY is not set");
         return;
       }
 
@@ -87,13 +79,9 @@ export function usePushNotifications() {
         const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
           scope: '/'
         });
-
         await navigator.serviceWorker.ready;
 
-        const token = await getToken(messaging, {
-          vapidKey,
-          serviceWorkerRegistration: registration
-        });
+        const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
 
         if (token && user) {
           const { error } = await supabase
@@ -103,16 +91,14 @@ export function usePushNotifications() {
 
           if (error) {
             toast.error("Failed to save notification token.");
-            console.error("Error saving FCM token:", error);
             return;
           }
-
-          toast.success("Notifications enabled! You'll be notified of new assignments.");
+          toast.success("Notifications enabled!");
         } else {
           toast.error("Could not get notification token. Try again.");
         }
       } else if (permission === 'denied') {
-        toast.error("Notifications blocked. Please enable them in your browser settings.");
+        toast.error("Notifications blocked. Enable them in your browser settings.");
       }
     } catch (error) {
       console.error("Failed to get FCM token:", error);
@@ -120,8 +106,7 @@ export function usePushNotifications() {
     }
   };
 
-  // ✅ Handles notifications when app is OPEN (foreground)
-  // Shows BOTH a native OS banner AND an in-app toast
+  // ✅ Foreground message handler
   useEffect(() => {
     if (!messaging) return;
 
@@ -133,30 +118,24 @@ export function usePushNotifications() {
       const assignmentId = payload.data?.assignment_id;
       const targetUrl = assignmentId ? `/assignments/${assignmentId}` : '/';
 
-      // 1. ✅ Show native OS notification banner via service worker
-      //    This makes the phone banner drop down even while the app is open
-      try {
+      // ✅ THE FIX: Post to the service worker so IT calls showNotification.
+      // Calling showNotification from the page context is unreliable on Android
+      // Chrome. The SW context always works because it's treated as a background process.
+      if ('serviceWorker' in navigator) {
         const registration = await navigator.serviceWorker.ready;
-        await registration.showNotification(title, {
-          body,
-          icon: '/favicon.ico',
-          badge: '/favicon.ico',
-          vibrate: [200, 100, 200],
-          requireInteraction: false,
-          data: { url: targetUrl }
-        });
-      } catch (err) {
-        console.error('[App] Failed to show native notification:', err);
+        if (registration.active) {
+          registration.active.postMessage({
+            type: 'SHOW_NOTIFICATION',
+            payload: { title, body, url: targetUrl, assignmentId }
+          });
+        }
       }
 
-      // 2. ✅ Also show in-app toast as a secondary indicator
+      // Also show in-app toast
       toast(title, {
         description: body,
         action: assignmentId
-          ? {
-              label: 'View',
-              onClick: () => window.location.href = targetUrl
-            }
+          ? { label: 'View', onClick: () => window.location.href = targetUrl }
           : undefined,
         duration: 6000
       });
