@@ -5,156 +5,136 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
+// ── Shared SW registration helper ─────────────────────────────────────────────
+// Always registers with updateViaCache: 'none' so the browser never serves a
+// stale SW file from HTTP cache. Returns the ready registration.
+async function getSwRegistration(): Promise<ServiceWorkerRegistration> {
+  await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+    scope: '/',
+    updateViaCache: 'none',
+  });
+  return navigator.serviceWorker.ready;
+}
+
 export function usePushNotifications() {
   const { user } = useAuth();
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const hasFetchedRef = useRef(false);
 
+  // ── On mount: read current permission and auto-sync token if already granted
   useEffect(() => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       setPermissionStatus('unsupported');
       return;
     }
+    setPermissionStatus(Notification.permission);
 
-    const currentPermission = Notification.permission;
-    setPermissionStatus(currentPermission);
-
-    if (currentPermission === 'granted' && user && !hasFetchedRef.current) {
+    if (Notification.permission === 'granted' && user && !hasFetchedRef.current) {
       hasFetchedRef.current = true;
       syncToken();
     }
   }, [user]);
 
+  // ── Save/refresh the FCM token in Supabase ────────────────────────────────
   const syncToken = async () => {
     try {
       if (!messaging) return;
-
       const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
-      if (!vapidKey) {
-        console.error("VITE_FIREBASE_KEY is missing");
-        return;
-      }
+      if (!vapidKey) { console.error('VITE_FIREBASE_KEY missing'); return; }
 
-      const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-        scope: '/',
-        updateViaCache: 'none', // Always fetch fresh SW — fixes stale SW issues
-      });
-      await navigator.serviceWorker.ready;
-
-      const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+      const reg   = await getSwRegistration();
+      const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
 
       if (token && user) {
-        console.log("FCM Token synced.");
-        const { error } = await supabase
-          .from('profiles')
-          .update({ fcm_token: token })
-          .eq('id', user.id);
-        if (error) console.error("Error saving FCM token:", error);
+        const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
+        if (error) console.error('Error saving FCM token:', error);
+        else console.log('[FCM] Token synced');
       }
-    } catch (error) {
-      console.error("Failed to sync FCM token:", error);
+    } catch (err) {
+      console.error('[FCM] syncToken failed:', err);
     }
   };
 
+  // ── Ask for permission then save token ────────────────────────────────────
   const requestPermissionAndGetToken = async () => {
-    try {
-      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-        toast.error("Your browser does not support push notifications.");
-        return;
-      }
-      if (!messaging) {
-        toast.error("Notification service failed to initialize.");
-        return;
-      }
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      toast.error('Your browser does not support push notifications.'); return;
+    }
+    if (!messaging) {
+      toast.error('Notification service failed to initialize.'); return;
+    }
+    const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
+    if (!vapidKey) {
+      toast.error('Notification configuration is missing.'); return;
+    }
 
-      const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
-      if (!vapidKey) {
-        toast.error("Notification configuration is missing.");
-        return;
-      }
+    const permission = await Notification.requestPermission();
+    setPermissionStatus(permission);
 
-      const permission = await Notification.requestPermission();
-      setPermissionStatus(permission);
-
-      if (permission === 'granted') {
-        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-          scope: '/',
-          updateViaCache: 'none',
-        });
-        await navigator.serviceWorker.ready;
-
-        const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+    if (permission === 'granted') {
+      try {
+        const reg   = await getSwRegistration();
+        const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
 
         if (token && user) {
-          const { error } = await supabase
-            .from('profiles')
-            .update({ fcm_token: token })
-            .eq('id', user.id);
-
-          if (error) {
-            toast.error("Failed to save notification token.");
-            return;
-          }
-          toast.success("Notifications enabled!");
+          const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
+          if (error) { toast.error('Failed to save notification token.'); return; }
+          toast.success('Notifications enabled!');
         } else {
-          toast.error("Could not get notification token. Try again.");
+          toast.error('Could not get notification token. Try again.');
         }
-      } else if (permission === 'denied') {
-        toast.error("Notifications blocked. Enable them in your browser settings.");
+      } catch (err) {
+        console.error('[FCM] requestPermission flow failed:', err);
+        toast.error('Failed to enable notifications.');
       }
-    } catch (error) {
-      console.error("Failed to get FCM token:", error);
-      toast.error("Failed to enable notifications.");
+    } else if (permission === 'denied') {
+      toast.error('Notifications blocked. Enable them in your browser settings.');
     }
   };
 
-  // ─── Foreground message handler ──────────────────────────────────────────
-  // When the app IS open, FCM doesn't show a system notification automatically.
-  // We forward the message to the SW via postMessage so it can call
-  // showNotification() — which works reliably in the SW context on all browsers.
+  // ── Foreground message handler ────────────────────────────────────────────
+  // When the page IS focused, FCM does NOT show a system notification itself.
+  // We must tell the SW to call showNotification() because:
+  //   • Chrome Android blocks new Notification() from page context when foregrounded
+  //   • Only SW-context showNotification() reliably appears in the system tray
+  //
+  // The SW's message handler uses event.waitUntil() to stay alive — this was
+  // the missing piece causing silent failures on Android.
   useEffect(() => {
     if (!messaging) return;
 
     const unsubscribe = onMessage(messaging, async (payload) => {
-      console.log('[App] Foreground message received:', payload);
+      console.log('[App] Foreground FCM message:', payload);
 
-      const title = payload.notification?.title || payload.data?.title || 'New Update';
-      const body = payload.notification?.body || payload.data?.body || 'Check the app.';
+      const title        = payload.notification?.title || payload.data?.title || 'New Update';
+      const body         = payload.notification?.body  || payload.data?.body  || '';
       const assignmentId = payload.data?.assignment_id;
-      const targetUrl = assignmentId ? `/assignment/${assignmentId}` : '/';
+      const targetUrl    = assignmentId ? `/assignment/${assignmentId}` : '/';
 
-      // ── Show system notification via the Service Worker ──────────────────
-      // We MUST use the SW to call showNotification — calling it directly from
-      // the page only works in secure contexts and often fails on Android Chrome
-      // when the page is in the foreground.
+      // ── Route through SW so Android shows a real system notification ──────
       try {
-        const registration = await navigator.serviceWorker.ready;
-        const activeWorker = registration.active;
+        const reg = await navigator.serviceWorker.ready;
 
-        if (activeWorker) {
-          activeWorker.postMessage({
+        if (reg.active) {
+          reg.active.postMessage({
             type: 'SHOW_NOTIFICATION',
             payload: { title, body, url: targetUrl, assignmentId },
           });
         } else {
-          // Fallback: direct notification from page context (desktop browsers)
+          // Fallback for desktop browsers where SW may not be active yet
           if (Notification.permission === 'granted') {
-            new Notification(title, {
-              body,
-              icon: '/favicon.ico',
-              tag: assignmentId || 'foreground-notif',
-            });
+            new Notification(title, { body, icon: '/favicon.ico' });
           }
         }
       } catch (err) {
-        console.error('[App] Failed to show notification via SW:', err);
+        console.error('[App] Failed to route notification through SW:', err);
       }
 
-      // ── Always also show the in-app toast ────────────────────────────────
+      // ── Always show in-app toast as well ──────────────────────────────────
       toast(title, {
         description: body,
         action: assignmentId
-          ? { label: 'View', onClick: () => window.location.href = targetUrl }
+          ? { label: 'View', onClick: () => (window.location.href = targetUrl) }
           : undefined,
         duration: 6000,
       });
