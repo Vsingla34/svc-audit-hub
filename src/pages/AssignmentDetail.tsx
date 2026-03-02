@@ -545,14 +545,14 @@ export default function AssignmentDetail() {
             <div>
               <Label className="text-sm font-medium">Completion Status</Label>
               <RadioGroup value={completionStatus} onValueChange={setCompletionStatus} className="mt-2 space-y-2">
-                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/5 cursor-pointer">
                   <RadioGroupItem value="completed" id="completed" />
                   <Label htmlFor="completed" className="flex-1 cursor-pointer">
                     <span className="font-medium">Completed</span>
                     <p className="text-xs text-muted-foreground">Audit was completed successfully</p>
                   </Label>
                 </div>
-                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/50 cursor-pointer">
+                <div className="flex items-center space-x-2 p-3 border rounded-lg hover:bg-muted/5 cursor-pointer">
                   <RadioGroupItem value="incomplete" id="incomplete" />
                   <Label htmlFor="incomplete" className="flex-1 cursor-pointer">
                     <span className="font-medium">Incomplete</span>

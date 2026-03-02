@@ -67,8 +67,8 @@ export default async function handler(req, res) {
         notification: {
           title: notification.title || "New Assignment Available",
           body: notification.message || "Check the app for details",
-          icon: "/favicon.ico",       // Shown in the notification banner
-          badge: "/favicon.ico",      // Small icon in Android status bar
+          icon: "/favicon.png",       // Shown in the notification banner
+          badge: "/favicon.png",      // Small icon in Android status bar
           requireInteraction: false,  // Don't force user to manually dismiss
           vibrate: [200, 100, 200],   // Vibration pattern on mobile
           data: {

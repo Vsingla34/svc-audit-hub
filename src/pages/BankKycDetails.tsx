@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Upload, CheckCircle2, AlertCircle, Landmark, CreditCard, QrCode, FileSignature, Fingerprint } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, Landmark, CreditCard, QrCode, FileSignature, Fingerprint, Clock } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function BankKycDetails() {
@@ -15,7 +15,7 @@ export default function BankKycDetails() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
-  const [recordId, setRecordId] = useState<string | null>(null);
+  const [bankStatus, setBankStatus] = useState<string>('unverified');
 
   const [formData, setFormData] = useState({
     bank_account_no: '',
@@ -36,28 +36,42 @@ export default function BankKycDetails() {
   const fetchBankDetails = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Fetch both live bank data and the pending draft from auditor_profiles
+      const { data: bankData } = await supabase
         .from('bank_kyc_details')
         .select('*')
         .eq('user_id', user?.id)
         .maybeSingle();
 
-      if (error) throw error;
+      const { data: audProfile } = await supabase
+        .from('auditor_profiles')
+        .select('bank_status, pending_bank_data')
+        .eq('user_id', user?.id)
+        .maybeSingle();
+
+      setBankStatus(audProfile?.bank_status || 'unverified');
+
+      const isPending = audProfile?.bank_status === 'pending';
+      const draft = audProfile?.pending_bank_data || {};
+
+      // If they have a pending draft, load that into the form. Otherwise, load live data.
+      const getValue = (key: string) => {
+        if (isPending && draft[key] !== undefined && draft[key] !== null) return draft[key];
+        return bankData?.[key] || '';
+      };
+
+      setFormData({
+        bank_account_no: getValue('bank_account_no'),
+        ifsc_code: getValue('ifsc_code'),
+        pan_number: getValue('pan_number'),
+        aadhaar_number: getValue('aadhaar_number'),
+        pan_card_url: getValue('pan_card_url'),
+        cancelled_cheque_url: getValue('cancelled_cheque_url'),
+        upi_qr_url: getValue('upi_qr_url'),
+        aadhaar_front_url: getValue('aadhaar_front_url'),
+        aadhaar_back_url: getValue('aadhaar_back_url')
+      });
       
-      if (data) {
-        setRecordId(data.id);
-        setFormData({
-          bank_account_no: data.bank_account_no || '',
-          ifsc_code: data.ifsc_code || '',
-          pan_number: data.pan_number || '',
-          aadhaar_number: data.aadhaar_number || '',
-          pan_card_url: data.pan_card_url || '',
-          cancelled_cheque_url: data.cancelled_cheque_url || '',
-          upi_qr_url: data.upi_qr_url || '',
-          aadhaar_front_url: data.aadhaar_front_url || '',
-          aadhaar_back_url: data.aadhaar_back_url || ''
-        });
-      }
     } catch (error: any) {
       toast.error('Failed to load banking details');
     } finally {
@@ -112,23 +126,28 @@ export default function BankKycDetails() {
         throw new Error("Please fill in all required text fields and upload all mandatory documents.");
       }
 
-      const payload = { ...formData, user_id: user.id };
+      // NEW LOGIC: Save the form strictly into the pending_bank_data draft column
+      const draftPayload = { ...formData };
 
-      if (recordId) {
-        const { error } = await supabase.from('bank_kyc_details').update(payload).eq('id', recordId);
+      // Ensure an auditor_profile exists first, if not, create it
+      const { data: existingProfile } = await supabase.from('auditor_profiles').select('id').eq('user_id', user.id).maybeSingle();
+
+      if (existingProfile) {
+        const { error } = await supabase.from('auditor_profiles').update({
+          bank_status: 'pending',
+          pending_bank_data: draftPayload
+        }).eq('user_id', user.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from('bank_kyc_details').insert([payload]).select('id').single();
+        const { error } = await supabase.from('auditor_profiles').insert([{
+          user_id: user.id,
+          bank_status: 'pending',
+          pending_bank_data: draftPayload
+        }]);
         if (error) throw error;
-        if (data) setRecordId(data.id);
       }
 
-      // 🚨 CRITICAL ADDITION: Force auditor profile to 'pending' since bank/KYC changed
-      await supabase
-        .from('auditor_profiles')
-        .update({ kyc_status: 'pending' })
-        .eq('user_id', user.id);
-
+      setBankStatus('pending');
       toast.success('Details saved! Submitted for Admin Approval.');
     } catch (error: any) {
       toast.error(error.message || 'Failed to save details');
@@ -149,13 +168,23 @@ export default function BankKycDetails() {
     <DashboardLayout title="Bank & KYC Details" navItems={auditorNavItems} activeTab="bank-kyc">
       <div className="max-w-5xl mx-auto py-6 space-y-6">
         
-        <Alert className="bg-amber-50 border-amber-200 text-amber-800 border-l-4 border-l-amber-500">
-           <AlertCircle className="h-4 w-4 text-amber-600" />
-           <AlertTitle>Approval Required</AlertTitle>
-           <AlertDescription className="font-medium">
-             Any changes made to your banking details or KYC documents will put your profile under review and require Admin approval.
-           </AlertDescription>
-        </Alert>
+        {bankStatus === 'pending' ? (
+           <Alert className="bg-blue-50 border-blue-200 text-blue-800 border-l-4 border-l-blue-500">
+             <Clock className="h-4 w-4 text-blue-600" />
+             <AlertTitle>Bank Updates Pending Review</AlertTitle>
+             <AlertDescription className="font-medium">
+               You have pending banking/KYC changes awaiting admin approval. The form below shows your drafted changes. You can modify and resubmit if needed.
+             </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="bg-amber-50 border-amber-200 text-amber-800 border-l-4 border-l-amber-500">
+             <AlertCircle className="h-4 w-4 text-amber-600" />
+             <AlertTitle>Approval Required</AlertTitle>
+             <AlertDescription className="font-medium">
+               Any changes made to your banking details or KYC documents will put your profile under review and require Admin approval before being used for payouts.
+             </AlertDescription>
+          </Alert>
+        )}
 
         <Card className="border-none shadow-md">
           <CardHeader className="bg-muted/10 border-b pb-6">
@@ -232,7 +261,7 @@ export default function BankKycDetails() {
 
           <CardFooter className="bg-muted/5 border-t px-6 py-4 flex justify-end">
             <Button size="lg" className="bg-[#4338CA] hover:bg-[#4338CA]/90 font-semibold px-8" onClick={handleSave} disabled={saving || uploadingField !== null}>
-              {saving ? 'Saving Details...' : 'Save Payout Details'}
+              {saving ? 'Drafting Details...' : bankStatus === 'pending' ? 'Update Draft Changes' : 'Submit Changes for Approval'}
             </Button>
           </CardFooter>
         </Card>

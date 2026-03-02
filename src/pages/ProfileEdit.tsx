@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Upload, User, Briefcase, MapPin, CheckCircle2, FileText, Image as ImageIcon, Users, AlertCircle } from 'lucide-react';
+import { Upload, User, Briefcase, MapPin, CheckCircle2, FileText, Image as ImageIcon, Users, AlertCircle, Clock } from 'lucide-react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 export default function ProfileEdit() {
@@ -19,29 +19,15 @@ export default function ProfileEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
-
-  // Keep track of the specific data that REQUIRES admin approval
+  const [profileStatus, setProfileStatus] = useState<string>('unverified');
   const [originalSensitiveData, setOriginalSensitiveData] = useState<any>({});
 
   const [formData, setFormData] = useState({
-    full_name: '',
-    phone: '',
-    qualifications: '',  
-    pan_card: '',        
-    gst_number: '',
-    experience_years: 0,
-    preferred_states: '', 
-    preferred_cities: '', 
-    base_city: '',
-    base_state: '',
-    willing_to_travel_radius: 0,
-    has_manpower: false,
-    manpower_count: 0,
-    competencies: '',     
-    core_competency: '',
-    address: '',
-    resume_url: '',
-    profile_photo_url: ''
+    full_name: '', phone: '', qualifications: '', pan_card: '', gst_number: '',
+    experience_years: 0, preferred_states: '', preferred_cities: '', 
+    base_city: '', base_state: '', willing_to_travel_radius: 0,
+    has_manpower: false, manpower_count: 0, competencies: '', core_competency: '',
+    address: '', resume_url: '', profile_photo_url: ''
   });
 
   useEffect(() => {
@@ -54,7 +40,9 @@ export default function ProfileEdit() {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user?.id).single();
       const { data: audProfile } = await supabase.from('auditor_profiles').select('*').eq('user_id', user?.id).maybeSingle();
 
-      // Store a snapshot of ONLY the fields that require approval
+      setProfileStatus(audProfile?.profile_status || 'unverified');
+
+      // Store a snapshot of ONLY the live fields that require approval for comparison
       setOriginalSensitiveData({
         qualifications: audProfile?.qualifications?.join(', ') || '',
         resume_url: audProfile?.resume_url || '',
@@ -65,25 +53,36 @@ export default function ProfileEdit() {
         address: audProfile?.address || '',
       });
 
+      // If they have a pending draft, load the drafted changes. Otherwise, load live data.
+      const isPending = audProfile?.profile_status === 'pending';
+      const draft = audProfile?.pending_profile_data || {};
+      const getValue = (key: string, isArray = false) => {
+        if (isPending && draft[key] !== undefined && draft[key] !== null) {
+          return isArray && Array.isArray(draft[key]) ? draft[key].join(', ') : draft[key];
+        }
+        const val = audProfile?.[key];
+        return isArray && Array.isArray(val) ? val.join(', ') : (val || '');
+      };
+
       setFormData({
         full_name: profile?.full_name || '',
         phone: profile?.phone || '',
-        qualifications: audProfile?.qualifications?.join(', ') || '',
-        pan_card: audProfile?.pan_card || '',
-        gst_number: audProfile?.gst_number || '',
-        experience_years: audProfile?.experience_years || 0,
-        preferred_states: audProfile?.preferred_states?.join(', ') || '',
-        preferred_cities: audProfile?.preferred_cities?.join(', ') || '',
-        base_city: audProfile?.base_city || '',
-        base_state: audProfile?.base_state || '',
-        willing_to_travel_radius: audProfile?.willing_to_travel_radius || 0,
-        has_manpower: audProfile?.has_manpower || false,
-        manpower_count: audProfile?.manpower_count || 0,
-        competencies: audProfile?.competencies?.join(', ') || '',
-        core_competency: audProfile?.core_competency || '',
-        address: audProfile?.address || '',
-        resume_url: audProfile?.resume_url || '',
-        profile_photo_url: audProfile?.profile_photo_url || ''
+        qualifications: getValue('qualifications', true),
+        pan_card: getValue('pan_card'),
+        gst_number: getValue('gst_number'),
+        experience_years: getValue('experience_years'),
+        preferred_states: getValue('preferred_states', true),
+        preferred_cities: getValue('preferred_cities', true),
+        base_city: getValue('base_city'),
+        base_state: getValue('base_state'),
+        willing_to_travel_radius: getValue('willing_to_travel_radius'),
+        has_manpower: getValue('has_manpower'),
+        manpower_count: getValue('manpower_count'),
+        competencies: getValue('competencies', true),
+        core_competency: getValue('core_competency'),
+        address: getValue('address'),
+        resume_url: getValue('resume_url'),
+        profile_photo_url: getValue('profile_photo_url')
       });
     } catch (error: any) {
       toast.error('Failed to load profile data');
@@ -110,7 +109,6 @@ export default function ProfileEdit() {
     try {
       const fileExt = file.name.split('.').pop();
       const filePath = `${user.id}/profile/${fieldName}-${Date.now()}.${fileExt}`;
-
       const { error: uploadError } = await supabase.storage.from('kyc-documents').upload(filePath, file);
       if (uploadError) throw uploadError;
 
@@ -129,7 +127,6 @@ export default function ProfileEdit() {
     setSaving(true);
     
     try {
-      // 1. SMART CHECK: Did they change the fields that require admin approval?
       let requiresReapproval = false;
       const currentManpowerCount = formData.has_manpower ? Number(formData.manpower_count) : 0;
       
@@ -145,47 +142,56 @@ export default function ProfileEdit() {
         requiresReapproval = true;
       }
 
-      // 2. Update profiles table (Name & Phone) - Does not trigger approval
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ full_name: formData.full_name, phone: formData.phone })
         .eq('id', user.id);
       if (profileError) throw profileError;
 
-      // 3. Prepare payload for auditor_profiles
-      const audPayload: any = {
-        user_id: user.id,
-        qualifications: formData.qualifications.split(',').map(s => s.trim()).filter(Boolean),
+      // Split into instant vs draft fields
+      const instantPayload = {
+        experience_years: Number(formData.experience_years) || 0,
         pan_card: formData.pan_card || null,
         gst_number: formData.gst_number || null,
-        experience_years: Number(formData.experience_years) || 0,
         preferred_states: formData.preferred_states.split(',').map(s => s.trim()).filter(Boolean),
         preferred_cities: formData.preferred_cities.split(',').map(s => s.trim()).filter(Boolean),
         base_city: formData.base_city || null,
         base_state: formData.base_state || null,
         willing_to_travel_radius: Number(formData.willing_to_travel_radius) || 0,
+        profile_photo_url: formData.profile_photo_url || null,
+      };
+
+      const draftPayload = {
+        qualifications: formData.qualifications.split(',').map(s => s.trim()).filter(Boolean),
+        resume_url: formData.resume_url || null,
         has_manpower: formData.has_manpower,
         manpower_count: currentManpowerCount,
         competencies: formData.competencies.split(',').map(s => s.trim()).filter(Boolean),
         core_competency: formData.core_competency || null,
         address: formData.address || null,
-        resume_url: formData.resume_url || null,
-        profile_photo_url: formData.profile_photo_url || null,
       };
 
-      // 4. Upsert into auditor_profiles
+      const updatePayload: any = { ...instantPayload };
+      
+      if (requiresReapproval) {
+        updatePayload.profile_status = 'pending';
+        updatePayload.pending_profile_data = draftPayload; // Put sensitive data in draft
+      } else {
+        Object.assign(updatePayload, draftPayload); // No approval needed, merge into live
+      }
+
       const { data: existing } = await supabase.from('auditor_profiles').select('id').eq('user_id', user.id).maybeSingle();
       
       if (existing) {
-        if (requiresReapproval) audPayload.kyc_status = 'pending'; // Require admin approval
-        const { error } = await supabase.from('auditor_profiles').update(audPayload).eq('user_id', user.id);
+        const { error } = await supabase.from('auditor_profiles').update(updatePayload).eq('user_id', user.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('auditor_profiles').insert([{ ...audPayload, kyc_status: 'pending' }]);
+        const { error } = await supabase.from('auditor_profiles').insert([{ user_id: user.id, ...updatePayload }]);
         if (error) throw error;
       }
 
       if (requiresReapproval) {
+        setProfileStatus('pending');
         toast.success('Profile saved! Submitted for Admin Approval.');
       } else {
         toast.success('Profile updated instantly!');
@@ -199,25 +205,25 @@ export default function ProfileEdit() {
     }
   };
 
-  if (loading) {
-    return (
-      <DashboardLayout title="Edit Profile" navItems={auditorNavItems} activeTab="my-profile">
-        <div className="flex items-center justify-center py-20 text-muted-foreground animate-pulse">Loading profile...</div>
-      </DashboardLayout>
-    );
-  }
+  if (loading) return <DashboardLayout title="Edit Profile" navItems={auditorNavItems} activeTab="my-profile"><div className="flex items-center justify-center py-20 text-muted-foreground animate-pulse">Loading profile...</div></DashboardLayout>;
 
   return (
     <DashboardLayout title="Edit Profile" navItems={auditorNavItems} activeTab="my-profile">
       <div className="max-w-5xl mx-auto py-6 space-y-6">
 
-        <Alert className="bg-amber-50 border-amber-200 text-amber-800">
-           <AlertCircle className="h-4 w-4 text-amber-600" />
-           <AlertTitle>Approval Requirements</AlertTitle>
-           <AlertDescription>
-             Changes to your <strong>Qualifications, Resume, Manpower, Competencies, and Address</strong> will put your profile under review and require Admin Re-approval. All other profile fields are updated instantly.
-           </AlertDescription>
-        </Alert>
+        {profileStatus === 'pending' ? (
+           <Alert className="bg-blue-50 border-blue-200 text-blue-800">
+             <Clock className="h-4 w-4 text-blue-600" />
+             <AlertTitle>Profile Updates Pending Review</AlertTitle>
+             <AlertDescription>You have pending profile changes awaiting admin approval. The form below shows your drafted changes.</AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="bg-amber-50 border-amber-200 text-amber-800">
+             <AlertCircle className="h-4 w-4 text-amber-600" />
+             <AlertTitle>Approval Requirements</AlertTitle>
+             <AlertDescription>Changes to <strong>Qualifications, Resume, Manpower, Competencies, and Address</strong> require Admin Re-approval. Other fields update instantly.</AlertDescription>
+          </Alert>
+        )}
 
         <Card className="border-none shadow-md">
           <CardHeader className="bg-muted/10 border-b pb-6">
@@ -300,15 +306,13 @@ export default function ProfileEdit() {
                   </label>
                   <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => handleFileUpload(e, 'resume_url')} disabled={uploadingField !== null} />
                 </div>
-
               </div>
             </div>
-
           </CardContent>
 
           <CardFooter className="bg-muted/5 border-t px-6 py-4 flex justify-end">
             <Button size="lg" className="bg-[#4338CA] hover:bg-[#4338CA]/90 font-semibold px-8" onClick={handleSave} disabled={saving || uploadingField !== null}>
-              {saving ? 'Saving Profile...' : 'Save Profile'}
+              {saving ? 'Saving Profile...' : profileStatus === 'pending' ? 'Update Draft Changes' : 'Save Profile'}
             </Button>
           </CardFooter>
         </Card>
