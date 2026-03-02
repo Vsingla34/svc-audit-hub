@@ -36,7 +36,8 @@ export function usePushNotifications() {
       }
 
       const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-        scope: '/'
+        scope: '/',
+        updateViaCache: 'none', // Always fetch fresh SW — fixes stale SW issues
       });
       await navigator.serviceWorker.ready;
 
@@ -77,7 +78,8 @@ export function usePushNotifications() {
 
       if (permission === 'granted') {
         const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-          scope: '/'
+          scope: '/',
+          updateViaCache: 'none',
         });
         await navigator.serviceWorker.ready;
 
@@ -106,7 +108,10 @@ export function usePushNotifications() {
     }
   };
 
-  // ✅ Foreground message handler
+  // ─── Foreground message handler ──────────────────────────────────────────
+  // When the app IS open, FCM doesn't show a system notification automatically.
+  // We forward the message to the SW via postMessage so it can call
+  // showNotification() — which works reliably in the SW context on all browsers.
   useEffect(() => {
     if (!messaging) return;
 
@@ -116,28 +121,42 @@ export function usePushNotifications() {
       const title = payload.notification?.title || payload.data?.title || 'New Update';
       const body = payload.notification?.body || payload.data?.body || 'Check the app.';
       const assignmentId = payload.data?.assignment_id;
-      const targetUrl = assignmentId ? `/assignments/${assignmentId}` : '/';
+      const targetUrl = assignmentId ? `/assignment/${assignmentId}` : '/';
 
-      // ✅ THE FIX: Post to the service worker so IT calls showNotification.
-      // Calling showNotification from the page context is unreliable on Android
-      // Chrome. The SW context always works because it's treated as a background process.
-      if ('serviceWorker' in navigator) {
+      // ── Show system notification via the Service Worker ──────────────────
+      // We MUST use the SW to call showNotification — calling it directly from
+      // the page only works in secure contexts and often fails on Android Chrome
+      // when the page is in the foreground.
+      try {
         const registration = await navigator.serviceWorker.ready;
-        if (registration.active) {
-          registration.active.postMessage({
+        const activeWorker = registration.active;
+
+        if (activeWorker) {
+          activeWorker.postMessage({
             type: 'SHOW_NOTIFICATION',
-            payload: { title, body, url: targetUrl, assignmentId }
+            payload: { title, body, url: targetUrl, assignmentId },
           });
+        } else {
+          // Fallback: direct notification from page context (desktop browsers)
+          if (Notification.permission === 'granted') {
+            new Notification(title, {
+              body,
+              icon: '/favicon.ico',
+              tag: assignmentId || 'foreground-notif',
+            });
+          }
         }
+      } catch (err) {
+        console.error('[App] Failed to show notification via SW:', err);
       }
 
-      // Also show in-app toast
+      // ── Always also show the in-app toast ────────────────────────────────
       toast(title, {
         description: body,
         action: assignmentId
           ? { label: 'View', onClick: () => window.location.href = targetUrl }
           : undefined,
-        duration: 6000
+        duration: 6000,
       });
     });
 
