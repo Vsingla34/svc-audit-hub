@@ -7,7 +7,6 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { AuthProvider, useAuth } from "./lib/auth";
 import { NotificationDebugPanel } from './components/Notificationdebugpanel';
 
-
 // Public Pages
 import Auth from "./pages/Auth";
 
@@ -29,9 +28,6 @@ import AdminDeadlinesPage from "./pages/admin/AdminDeadlinesPage";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
 
-// Inside your return, just before the closing tag:
-
-
 // Auditor Separated Pages
 import AuditorOverviewPage from "./pages/auditor/AuditorOverviewPage";
 import AuditorAvailableJobsPage from "./pages/auditor/AuditorAvailableJobsPage";
@@ -50,20 +46,17 @@ const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode,
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
-  // 1. If not logged in, go to Auth
   if (!user) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
-  // 2. Role Check (if a specific role is required for this route)
   if (requiredRole && userRole !== requiredRole) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  // 3. If Auditor AND Profile Incomplete AND trying to access restricted pages
   if (
-    userRole === 'auditor' && 
-    !isProfileComplete && 
+    userRole === 'auditor' &&
+    !isProfileComplete &&
     location.pathname !== '/profile-setup'
   ) {
     return <Navigate to="/profile-setup" replace />;
@@ -84,7 +77,6 @@ function App() {
               {/* Public Route */}
               <Route path="/" element={<Navigate to="/auth" replace />} />
               <Route path="/auth" element={<Auth />} />
-              <NotificationDebugPanel />
 
               {/* Main routing hub */}
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -100,10 +92,8 @@ function App() {
               {/* --- AUDITOR ROUTES --- */}
               <Route path="/auditor/overview" element={<ProtectedRoute requiredRole="auditor"><AuditorOverviewPage /></ProtectedRoute>} />
               <Route path="/auditor/available-jobs" element={<ProtectedRoute requiredRole="auditor"><AuditorAvailableJobsPage /></ProtectedRoute>} />
-              
               <Route path="/auditor/assignments" element={<ProtectedRoute requiredRole="auditor"><AuditorMyAssignmentsPage /></ProtectedRoute>} />
               <Route path="/auditor/live-report" element={<ProtectedRoute requiredRole="auditor"><AuditorLiveReportPage /></ProtectedRoute>} />
-            
 
               {/* --- SHARED ROUTES --- */}
               <Route path="/profile-setup" element={<ProtectedRoute><AuditorProfileSetup /></ProtectedRoute>} />
@@ -112,17 +102,18 @@ function App() {
               <Route path="/payments" element={<ProtectedRoute><PaymentsDashboard /></ProtectedRoute>} />
               <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
               <Route path="/assignment/:id" element={<ProtectedRoute><AssignmentDetail /></ProtectedRoute>} />
-              
+
               <Route path="*" element={<NotFound />} />
             </Routes>
+
+            {/* ✅ Placed OUTSIDE <Routes> but INSIDE <AuthProvider> so it has access to useAuth() */}
+            <NotificationDebugPanel />
+
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
-
-    
   );
-  
 }
 
 export default App;
