@@ -5,6 +5,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { NotificationDebugPanel } from './components/Notificationdebugpanel';
+
 
 // Public Pages
 import Auth from "./pages/Auth";
@@ -26,7 +28,6 @@ import AdminApplicationsPage from "./pages/admin/AdminApplicationsPage";
 import AdminDeadlinesPage from "./pages/admin/AdminDeadlinesPage";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
-import { NotificationDebugPanel } from '@/components/NotificationDebugPanel';
 
 // Inside your return, just before the closing tag:
 
