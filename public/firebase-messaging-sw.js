@@ -1,6 +1,16 @@
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
+// ✅ Force new SW to activate immediately without waiting for old one to die
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+// ✅ Take control of all open tabs immediately on activation
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim());
+});
+
 firebase.initializeApp({
   apiKey: "AIzaSyB_Bv6PVbPuThrXImzh5vtKfX6NKsiZqqw",
   authDomain: "audit-flow-stockcheck360.firebaseapp.com",
@@ -13,13 +23,11 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // ✅ BACKGROUND: Fires when app is closed or browser tab is not active
-// The browser OS handles showing the notification automatically when a
-// `notification` block is present in the FCM payload (which our server sends).
-// This handler is a fallback for any extra customization needed.
 messaging.onBackgroundMessage((payload) => {
   console.log('[SW] Background message received:', payload);
 
-  // Only manually show if there's no notification block (data-only message)
+  // Browser handles display automatically when notification block is present
+  // Only manually show for data-only messages
   if (payload.notification) return;
 
   return self.registration.showNotification(
@@ -38,9 +46,8 @@ messaging.onBackgroundMessage((payload) => {
   );
 });
 
-// ✅ FOREGROUND: The React app posts a message here when onMessage fires,
-// so the SW can show the native OS banner (calling showNotification from the
-// page context is unreliable on Android Chrome — must be called from SW).
+// ✅ FOREGROUND: React app posts here so SW can show native OS banner
+// (showNotification from page context is unreliable on Android Chrome)
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'SHOW_NOTIFICATION') {
     const { title, body, url, assignmentId } = event.data.payload;
@@ -50,14 +57,14 @@ self.addEventListener('message', (event) => {
       icon: '/favicon.ico',
       badge: '/favicon.ico',
       vibrate: [200, 100, 200],
-      tag: assignmentId || 'default',   // collapses duplicate notifications
-      renotify: true,                   // still vibrates even if same tag
+      tag: assignmentId || 'default',
+      renotify: true,
       data: { url: url || '/' }
     });
   }
 });
 
-// ✅ Handles what happens when user TAPS the notification banner
+// ✅ Handle notification tap — open or focus the app
 self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification clicked');
   event.notification.close();
@@ -66,14 +73,12 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // If app tab is already open, focus and navigate it
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
           client.focus();
           return client.navigate(targetUrl);
         }
       }
-      // App not open — open a new tab
       return clients.openWindow(targetUrl);
     })
   );
