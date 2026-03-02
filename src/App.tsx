@@ -83,6 +83,7 @@ function App() {
               {/* Public Route */}
               <Route path="/" element={<Navigate to="/auth" replace />} />
               <Route path="/auth" element={<Auth />} />
+              <NotificationDebugPanel />
 
               {/* Main routing hub */}
               <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
@@ -117,7 +118,10 @@ function App() {
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
+
+    
   );
+  
 }
 
 export default App;
