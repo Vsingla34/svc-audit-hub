@@ -38,6 +38,13 @@ import AuditorAnalyticsPage from "./pages/auditor/AuditorAnalyticsPage";
 
 const queryClient = new QueryClient();
 
+// Only renders the debug panel when a user is logged in
+function DebugPanelWrapper() {
+  const { user, loading } = useAuth();
+  if (loading || !user) return null;
+  return <NotificationDebugPanel />;
+}
+
 const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode, requiredRole?: 'admin' | 'auditor' | 'client' }) => {
   const { user, loading, userRole, isProfileComplete } = useAuth();
   const location = useLocation();
@@ -106,8 +113,8 @@ function App() {
               <Route path="*" element={<NotFound />} />
             </Routes>
 
-            {/* ✅ Placed OUTSIDE <Routes> but INSIDE <AuthProvider> so it has access to useAuth() */}
-            <NotificationDebugPanel />
+            {/* ✅ Only show debug panel when logged in */}
+            <DebugPanelWrapper />
 
           </AuthProvider>
         </BrowserRouter>
