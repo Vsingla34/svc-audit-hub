@@ -1,13 +1,14 @@
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-// ✅ Force new SW to activate immediately without waiting for old one to die
+// ✅ Force new SW to activate immediately
 self.addEventListener('install', (event) => {
+  console.log('[SW] Installing...');
   self.skipWaiting();
 });
 
-// ✅ Take control of all open tabs immediately on activation
 self.addEventListener('activate', (event) => {
+  console.log('[SW] Activating...');
   event.waitUntil(clients.claim());
 });
 
@@ -22,33 +23,57 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// ✅ BACKGROUND: Fires when app is closed or browser tab is not active
-messaging.onBackgroundMessage((payload) => {
-  console.log('[SW] Background message received:', payload);
+// ✅ RAW push event listener — this fires for ALL push events including
+// the DevTools "Push" button test. Must be defined BEFORE Firebase's handler.
+self.addEventListener('push', (event) => {
+  console.log('[SW] Raw push event received:', event);
 
-  // Browser handles display automatically when notification block is present
-  // Only manually show for data-only messages
-  if (payload.notification) return;
+  let title = 'StockCheck360';
+  let body = 'You have a new notification.';
+  let url = '/';
 
-  return self.registration.showNotification(
-    payload.data?.title || 'StockCheck360',
-    {
-      body: payload.data?.body || 'You have a new notification.',
+  // Try to parse the push data if it exists
+  if (event.data) {
+    try {
+      const data = event.data.json();
+      console.log('[SW] Push data:', data);
+
+      // Handle both FCM format and raw format
+      title = data?.notification?.title || data?.data?.title || title;
+      body = data?.notification?.body || data?.data?.body || body;
+      const assignmentId = data?.data?.assignment_id;
+      url = assignmentId ? `/assignments/${assignmentId}` : (data?.data?.url || '/');
+    } catch (e) {
+      // If not JSON, use the raw text as body
+      body = event.data.text() || body;
+    }
+  }
+
+  // ✅ Always show notification — this is what produces the OS banner
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
       icon: '/favicon.ico',
       badge: '/favicon.ico',
       vibrate: [200, 100, 200],
-      data: {
-        url: payload.data?.assignment_id
-          ? `/assignments/${payload.data.assignment_id}`
-          : '/'
-      }
-    }
+      requireInteraction: false,
+      data: { url }
+    })
   );
 });
 
-// ✅ FOREGROUND: React app posts here so SW can show native OS banner
-// (showNotification from page context is unreliable on Android Chrome)
+// Firebase background handler — only runs for FCM messages when app is closed
+// Raw push listener above handles everything else
+messaging.onBackgroundMessage((payload) => {
+  console.log('[SW] FCM background message:', payload);
+  // Raw push listener above already showed the notification, so do nothing here
+  // to avoid showing it twice
+});
+
+// ✅ FOREGROUND: React app posts here so SW shows native OS banner
 self.addEventListener('message', (event) => {
+  console.log('[SW] Message from page:', event.data);
+
   if (event.data?.type === 'SHOW_NOTIFICATION') {
     const { title, body, url, assignmentId } = event.data.payload;
 
@@ -64,7 +89,7 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// ✅ Handle notification tap — open or focus the app
+// ✅ Handle notification tap
 self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification clicked');
   event.notification.close();
