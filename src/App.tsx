@@ -26,6 +26,10 @@ import AdminApplicationsPage from "./pages/admin/AdminApplicationsPage";
 import AdminDeadlinesPage from "./pages/admin/AdminDeadlinesPage";
 import AdminReportsPage from "./pages/admin/AdminReportsPage";
 import AdminUsersPage from "./pages/admin/AdminUsersPage";
+import { NotificationDebugPanel } from '@/components/NotificationDebugPanel';
+
+// Inside your return, just before the closing tag:
+
 
 // Auditor Separated Pages
 import AuditorOverviewPage from "./pages/auditor/AuditorOverviewPage";
