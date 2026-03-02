@@ -5,7 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { NotificationDebugPanel } from './components/Notificationdebugpanel';
 
 // Public Pages
 import Auth from "./pages/Auth";
@@ -38,13 +37,6 @@ import AuditorAnalyticsPage from "./pages/auditor/AuditorAnalyticsPage";
 
 const queryClient = new QueryClient();
 
-// Only renders the debug panel when a user is logged in
-function DebugPanelWrapper() {
-  const { user, loading } = useAuth();
-  if (loading || !user) return null;
-  return <NotificationDebugPanel />;
-}
-
 const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode, requiredRole?: 'admin' | 'auditor' | 'client' }) => {
   const { user, loading, userRole, isProfileComplete } = useAuth();
   const location = useLocation();
@@ -53,17 +45,20 @@ const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode,
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
 
+  // 1. If not logged in, go to Auth
   if (!user) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
   }
 
+  // 2. Role Check (if a specific role is required for this route)
   if (requiredRole && userRole !== requiredRole) {
     return <Navigate to="/dashboard" replace />;
   }
 
+  // 3. If Auditor AND Profile Incomplete AND trying to access restricted pages
   if (
-    userRole === 'auditor' &&
-    !isProfileComplete &&
+    userRole === 'auditor' && 
+    !isProfileComplete && 
     location.pathname !== '/profile-setup'
   ) {
     return <Navigate to="/profile-setup" replace />;
@@ -99,8 +94,10 @@ function App() {
               {/* --- AUDITOR ROUTES --- */}
               <Route path="/auditor/overview" element={<ProtectedRoute requiredRole="auditor"><AuditorOverviewPage /></ProtectedRoute>} />
               <Route path="/auditor/available-jobs" element={<ProtectedRoute requiredRole="auditor"><AuditorAvailableJobsPage /></ProtectedRoute>} />
+              
               <Route path="/auditor/assignments" element={<ProtectedRoute requiredRole="auditor"><AuditorMyAssignmentsPage /></ProtectedRoute>} />
               <Route path="/auditor/live-report" element={<ProtectedRoute requiredRole="auditor"><AuditorLiveReportPage /></ProtectedRoute>} />
+            
 
               {/* --- SHARED ROUTES --- */}
               <Route path="/profile-setup" element={<ProtectedRoute><AuditorProfileSetup /></ProtectedRoute>} />
@@ -109,13 +106,9 @@ function App() {
               <Route path="/payments" element={<ProtectedRoute><PaymentsDashboard /></ProtectedRoute>} />
               <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
               <Route path="/assignment/:id" element={<ProtectedRoute><AssignmentDetail /></ProtectedRoute>} />
-
+              
               <Route path="*" element={<NotFound />} />
             </Routes>
-
-            {/* ✅ Only show debug panel when logged in */}
-            <DebugPanelWrapper />
-
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>
