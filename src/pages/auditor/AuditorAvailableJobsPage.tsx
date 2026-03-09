@@ -4,7 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -69,33 +69,33 @@ export default function AuditorAvailableJobsPage() {
       <div className="space-y-6 max-w-7xl mx-auto py-6">
         
         {/* Filters Section */}
-        <Card className="bg-muted/30 border-none shadow-sm">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label>State</Label>
+        <Card className="bg-white border shadow-sm rounded-xl overflow-hidden">
+          <div className="p-4 sm:p-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">State</Label>
                 <Select value={filterState} onValueChange={setFilterState}>
-                  <SelectTrigger><SelectValue placeholder="All States" /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="All States" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All States</SelectItem>
                     {uniqueStates.map(s => <SelectItem key={s as string} value={s as string}>{s as string}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>City</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">City</Label>
                 <Select value={filterCity} onValueChange={setFilterCity}>
-                  <SelectTrigger><SelectValue placeholder="All Cities" /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="All Cities" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Cities</SelectItem>
                     {uniqueCities.map(c => <SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Audit Type</Label>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Audit Type</Label>
                 <Select value={filterAuditType} onValueChange={setFilterAuditType}>
-                  <SelectTrigger><SelectValue placeholder="All Types" /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue placeholder="All Types" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Types</SelectItem>
                     {uniqueAuditTypes.map(t => <SelectItem key={t as string} value={t as string}>{t as string}</SelectItem>)}
@@ -103,99 +103,102 @@ export default function AuditorAvailableJobsPage() {
                 </Select>
               </div>
             </div>
-          </CardContent>
+          </div>
         </Card>
 
         {/* Jobs Listing */}
         {isLoading ? (
            <div className="flex justify-center py-12 text-muted-foreground animate-pulse">Loading available jobs...</div>
         ) : filteredOpenAssignments.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center text-muted-foreground flex flex-col items-center gap-2">
-              <Briefcase className="h-10 w-10 opacity-20"/>
-              <p>No assignments found matching your criteria.</p>
+          <Card className="border-dashed border-2 bg-muted/10">
+            <CardContent className="py-16 text-center text-muted-foreground flex flex-col items-center gap-3">
+              <Briefcase className="h-12 w-12 opacity-20"/>
+              <p className="text-lg font-medium text-foreground">No matching assignments found.</p>
+              <p className="text-sm max-w-sm">Try adjusting your filters or checking back later for new opportunities in your area.</p>
               {(filterState !== 'all' || filterCity !== 'all' || filterAuditType !== 'all') && (
                 <Button variant="outline" className="mt-4" onClick={() => { setFilterState('all'); setFilterCity('all'); setFilterAuditType('all'); }}>
-                  Clear Filters
+                  Clear All Filters
                 </Button>
               )}
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
             {filteredOpenAssignments.map(a => {
               // Calculate total possible payout including base fees + all allowances
               const totalPayout = (a.fees || 0) + (a.ope || 0) + (a.reimbursement_food || 0) + (a.reimbursement_courier || 0) + (a.reimbursement_conveyance || 0);
               
               return (
-                <Card key={a.id} className="group hover:shadow-xl transition-all duration-300 border-none shadow-md bg-card overflow-hidden flex flex-col h-full relative">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#4338CA] to-[#4338CA]/60" />
-                    <CardHeader className="pb-3 pt-5">
-                        <div className="flex justify-between items-start gap-2">
-                            <Badge variant="outline" className="mb-2 w-fit border-[#4338CA]/20 text-[#4338CA] bg-[#4338CA]/5 uppercase text-[10px] tracking-wider font-semibold">
+                <Card key={a.id} className="group hover:shadow-xl transition-all duration-200 border-border/60 shadow-sm bg-white overflow-hidden flex flex-col h-full relative rounded-xl">
+                    {/* Top Accent Line */}
+                    <div className="absolute top-0 left-0 w-full h-1 bg-[#4338CA] opacity-90" />
+                    
+                    <div className="p-4 flex-1 flex flex-col">
+                        {/* Header: Badges & Payout */}
+                        <div className="flex justify-between items-start mb-3">
+                            <Badge variant="secondary" className="bg-[#4338CA]/10 text-[#4338CA] hover:bg-[#4338CA]/20 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5">
                               {a.audit_type}
                             </Badge>
-                            <Badge 
-                              variant="secondary" 
-                              className="bg-[#4338CA]/10 text-[#4338CA] font-bold border border-[#4338CA]/20"
-                              title={`Base: ₹${a.fees} + Allowances: ₹${totalPayout - (a.fees || 0)}`}
-                            >
-                              <IndianRupee className="h-3 w-3 mr-1" />Up to {totalPayout.toLocaleString()}/day
-                            </Badge>
+                            <div className="text-right">
+                               <div className="text-sm font-extrabold text-green-600 flex items-center justify-end">
+                                 <IndianRupee className="h-3.5 w-3.5" />{totalPayout.toLocaleString('en-IN')}
+                               </div>
+                               <div className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Up to / day</div>
+                            </div>
                         </div>
-                        <div className="space-y-1">
-                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] font-mono text-muted-foreground">
-                                #{a.assignment_number || a.id.substring(0, 6).toUpperCase()}
+
+                        {/* Title & Location */}
+                        <div className="mb-4">
+                            <h3 className="text-base font-bold leading-tight text-foreground group-hover:text-[#4338CA] transition-colors line-clamp-1 mb-1.5" title={a.industry || 'Confidential Client'}>
+                              {a.industry || 'Confidential Client'}
+                              {(!a.industry) && <Shield className="h-3.5 w-3.5 inline ml-1.5 text-muted-foreground/50"/>}
+                            </h3>
+                            <div className="flex items-center text-xs text-muted-foreground font-medium">
+                              <MapPin className="h-3.5 w-3.5 mr-1 text-muted-foreground/70" />
+                              <span className="truncate">{a.city}, {a.state}</span>
+                            </div>
+                        </div>
+
+                        {/* Compact Details Grid */}
+                        <div className="bg-muted/40 rounded-lg p-3 space-y-2.5 mt-auto border border-border/50">
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center text-muted-foreground">
+                                <Calendar className="h-3.5 w-3.5 mr-1.5" /> Start
+                              </div>
+                              <span className="font-semibold text-foreground">
+                                {a.audit_date ? format(new Date(a.audit_date), 'dd MMM yyyy') : 'N/A'}
                               </span>
                             </div>
-                            <CardTitle className="text-lg font-bold leading-tight group-hover:text-[#4338CA] transition-colors flex items-center gap-2">
-                              {a.industry || 'Confidential Client'}
-                              {(!a.industry) && <Shield className="h-3.5 w-3.5 text-muted-foreground/60"/>}
-                            </CardTitle>
-                            <div className="flex items-center text-sm text-muted-foreground pt-1">
-                              <MapPin className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                              {a.city}, {a.state}
-                            </div>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="flex-1 pb-4">
-                        <div className="grid grid-cols-2 gap-3 pt-2">
-                            <div className="bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                                <GraduationCap className="h-3.5 w-3.5" /><span>Qualification</span>
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center text-muted-foreground">
+                                <Clock className="h-3.5 w-3.5 mr-1.5" /> Duration
                               </div>
-                              <div className="text-sm font-medium truncate" title={a.qualification_required}>
-                                {a.qualification_required || 'Any'}
-                              </div>
-                            </div>
-                            <div className="bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors">
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                                <Clock className="h-3.5 w-3.5" /><span>Duration</span>
-                              </div>
-                              <div className="text-sm font-medium">
+                              <span className="font-medium text-foreground">
                                 {a.duration || 'Flexible'}
-                              </div>
+                              </span>
                             </div>
-                            <div className="col-span-2 bg-muted/30 p-2.5 rounded-lg border border-border/50 hover:bg-muted/50 transition-colors flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                <Calendar className="h-3.5 w-3.5" /><span>Start Date</span>
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center text-muted-foreground">
+                                <GraduationCap className="h-3.5 w-3.5 mr-1.5" /> Qual.
                               </div>
-                              <div className="text-sm font-medium">
-                                {a.audit_date ? format(new Date(a.audit_date), 'dd MMM yyyy') : 'N/A'}
-                              </div>
+                              <span className="font-medium text-foreground truncate max-w-[110px] text-right" title={a.qualification_required || 'Any'}>
+                                {a.qualification_required || 'Any'}
+                              </span>
                             </div>
                         </div>
-                    </CardContent>
-                    <CardFooter className="pt-0 pb-5 px-6">
+                    </div>
+
+                    <div className="p-4 pt-0">
                       <Button 
-                        className="w-full shadow-sm hover:shadow group-hover:bg-[#4338CA] group-hover:text-white transition-all" 
+                        variant="outline"
+                        size="sm"
+                        className="w-full font-semibold border-[#4338CA]/20 text-[#4338CA] bg-white hover:bg-[#4338CA] hover:text-white transition-all group-hover:border-[#4338CA]" 
                         onClick={() => navigate(`/assignment/${a.id}`)}
                       >
                         View Details 
-                        <ArrowRight className="h-4 w-4 ml-2 opacity-70 group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight className="h-3.5 w-3.5 ml-1.5 opacity-70 group-hover:translate-x-1 transition-transform" />
                       </Button>
-                    </CardFooter>
+                    </div>
                 </Card>
               );
             })}

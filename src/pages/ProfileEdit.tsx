@@ -19,6 +19,8 @@ export default function ProfileEdit() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  
+  // Track the NEW profile status for the UI
   const [profileStatus, setProfileStatus] = useState<string>('unverified');
   const [originalSensitiveData, setOriginalSensitiveData] = useState<any>({});
 
@@ -40,6 +42,7 @@ export default function ProfileEdit() {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user?.id).single();
       const { data: audProfile } = await supabase.from('auditor_profiles').select('*').eq('user_id', user?.id).maybeSingle();
 
+      // Read from the correct NEW status column
       setProfileStatus(audProfile?.profile_status || 'unverified');
 
       // Store a snapshot of ONLY the live fields that require approval for comparison
@@ -56,6 +59,7 @@ export default function ProfileEdit() {
       // If they have a pending draft, load the drafted changes. Otherwise, load live data.
       const isPending = audProfile?.profile_status === 'pending';
       const draft = audProfile?.pending_profile_data || {};
+      
       const getValue = (key: string, isArray = false) => {
         if (isPending && draft[key] !== undefined && draft[key] !== null) {
           return isArray && Array.isArray(draft[key]) ? draft[key].join(', ') : draft[key];
@@ -130,6 +134,7 @@ export default function ProfileEdit() {
       let requiresReapproval = false;
       const currentManpowerCount = formData.has_manpower ? Number(formData.manpower_count) : 0;
       
+      // Check if sensitive fields changed
       if (
         formData.qualifications !== originalSensitiveData.qualifications ||
         formData.resume_url !== originalSensitiveData.resume_url ||
@@ -142,13 +147,14 @@ export default function ProfileEdit() {
         requiresReapproval = true;
       }
 
+      // 1. Update profiles table (Name & Phone) instantly
       const { error: profileError } = await supabase
         .from('profiles')
         .update({ full_name: formData.full_name, phone: formData.phone })
         .eq('id', user.id);
       if (profileError) throw profileError;
 
-      // Split into instant vs draft fields
+      // 2. Map fields that update INSTANTLY (Non-sensitive)
       const instantPayload = {
         experience_years: Number(formData.experience_years) || 0,
         pan_card: formData.pan_card || null,
@@ -161,6 +167,7 @@ export default function ProfileEdit() {
         profile_photo_url: formData.profile_photo_url || null,
       };
 
+      // 3. Map fields that go to the DRAFT JSON for review
       const draftPayload = {
         qualifications: formData.qualifications.split(',').map(s => s.trim()).filter(Boolean),
         resume_url: formData.resume_url || null,
@@ -174,10 +181,12 @@ export default function ProfileEdit() {
       const updatePayload: any = { ...instantPayload };
       
       if (requiresReapproval) {
+        // Send sensitive data to the new JSON column and trigger admin view
         updatePayload.profile_status = 'pending';
-        updatePayload.pending_profile_data = draftPayload; // Put sensitive data in draft
+        updatePayload.pending_profile_data = draftPayload; 
       } else {
-        Object.assign(updatePayload, draftPayload); // No approval needed, merge into live
+        // No approval needed, merge into live columns
+        Object.assign(updatePayload, draftPayload); 
       }
 
       const { data: existing } = await supabase.from('auditor_profiles').select('id').eq('user_id', user.id).maybeSingle();
@@ -212,13 +221,13 @@ export default function ProfileEdit() {
       <div className="max-w-5xl mx-auto py-6 space-y-6">
 
         {profileStatus === 'pending' ? (
-           <Alert className="bg-blue-50 border-blue-200 text-blue-800">
+           <Alert className="bg-blue-50 border-blue-200 text-blue-800 border-l-4 border-l-blue-500">
              <Clock className="h-4 w-4 text-blue-600" />
              <AlertTitle>Profile Updates Pending Review</AlertTitle>
              <AlertDescription>You have pending profile changes awaiting admin approval. The form below shows your drafted changes.</AlertDescription>
           </Alert>
         ) : (
-          <Alert className="bg-amber-50 border-amber-200 text-amber-800">
+          <Alert className="bg-amber-50 border-amber-200 text-amber-800 border-l-4 border-l-amber-500">
              <AlertCircle className="h-4 w-4 text-amber-600" />
              <AlertTitle>Approval Requirements</AlertTitle>
              <AlertDescription>Changes to <strong>Qualifications, Resume, Manpower, Competencies, and Address</strong> require Admin Re-approval. Other fields update instantly.</AlertDescription>
@@ -306,8 +315,10 @@ export default function ProfileEdit() {
                   </label>
                   <input type="file" accept=".pdf,.doc,.docx" className="hidden" onChange={(e) => handleFileUpload(e, 'resume_url')} disabled={uploadingField !== null} />
                 </div>
+
               </div>
             </div>
+
           </CardContent>
 
           <CardFooter className="bg-muted/5 border-t px-6 py-4 flex justify-end">

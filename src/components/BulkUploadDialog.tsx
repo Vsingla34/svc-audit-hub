@@ -23,12 +23,10 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
     
     // If it's a number, it's an Excel date serial code
     if (typeof excelDate === 'number') {
-      // Convert Excel epoch to Unix epoch (subtract 25569 days)
       const date = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
       return date.toISOString().split('T')[0];
     }
     
-    // If it's a string, try to parse it normally
     try {
       const d = new Date(excelDate);
       if (!isNaN(d.getTime())) {
@@ -38,8 +36,18 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
       console.error("Date parse error", e);
     }
     
-    // Fallback to today if parsing completely fails
     return new Date().toISOString().split('T')[0];
+  };
+
+  // Helper to parse "Yes", "No", "True", "False" from Excel to Booleans
+  const parseBoolean = (val: any) => {
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'string') {
+      const lower = val.toLowerCase().trim();
+      return lower === 'yes' || lower === 'y' || lower === 'true' || lower === '1';
+    }
+    if (typeof val === 'number') return val === 1;
+    return false;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,28 +61,43 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
       const workbook = XLSX.read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // raw: true ensures dates stay as serial numbers instead of formatted strings like "1/15/24"
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: true });
 
       if (jsonData.length === 0) {
         throw new Error("The uploaded Excel file is empty.");
       }
 
-      // Map rows with fallbacks to prevent NOT NULL constraint errors in Supabase
+      // Map rows EXACTLY to the Supabase schema provided
       const assignments = jsonData.map((row: any) => ({
-        client_name: row['Client Name'] || row['client_name'] || 'Unknown Client',
-        branch_name: row['Branch Name'] || row['branch_name'] || 'Main Branch',
-        address: row['Address'] || row['address'] || 'N/A',
-        city: row['City'] || row['city'] || 'Unknown City',
-        state: row['State'] || row['state'] || 'Unknown State',
+        client_name: String(row['Client Name'] || row['client_name'] || 'Unknown Client'),
+        branch_name: String(row['Branch Name'] || row['branch_name'] || 'Main Branch'),
+        industry: row['Industry'] || row['industry'] || null,
+        address: String(row['Address'] || row['address'] || 'N/A'),
+        city: String(row['City'] || row['city'] || 'Unknown City'),
+        state: String(row['State'] || row['state'] || 'Unknown State'),
         pincode: String(row['Pincode'] || row['pincode'] || '000000'),
-        audit_type: row['Audit Type'] || row['audit_type'] || 'Stock Audit',
+        audit_type: String(row['Audit Type'] || row['audit_type'] || 'Stock Audit'),
         audit_date: parseExcelDate(row['Audit Date'] || row['audit_date']),
         deadline_date: parseExcelDate(row['Deadline Date'] || row['deadline_date']),
+        duration: String(row['Duration'] || row['duration'] || '1 Day'),
+        qualification_required: row['Qualification Required'] || row['qualification_required'] || null,
+        
+        // Finances & Payouts
         fees: parseFloat(row['Fees'] || row['fees'] || 0),
         ope: parseFloat(row['OPE'] || row['ope'] || 0),
+        reimbursement_food: parseFloat(row['Reimbursement Food'] || row['reimbursement_food'] || 0),
+        reimbursement_conveyance: parseFloat(row['Reimbursement Conveyance'] || row['reimbursement_conveyance'] || 0),
+        reimbursement_courier: parseFloat(row['Reimbursement Courier'] || row['reimbursement_courier'] || 0),
+        reimbursement: row['Reimbursement Guidelines'] || row['reimbursement'] || null,
+        
+        // Logistics & Asset Requirements (Matching the exact DB schema names)
+        requires_laptop: parseBoolean(row['Laptop Required'] || row['requires_laptop']),
+        requires_smartphone: parseBoolean(row['Smartphone Required'] || row['requires_smartphone']),
+        requires_bike: parseBoolean(row['Bike Required'] || row['requires_bike']),
+        additional_info: row['Additional Info'] || row['additional_info'] || null,
+        
         created_by: userId,
-        status: 'open' // ensure it defaults to open
+        status: 'open' 
       }));
 
       const { error } = await supabase.from('assignments').insert(assignments);
@@ -99,7 +122,6 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
       });
     } finally {
       setUploading(false);
-      // Reset the file input so the same file can be uploaded again if needed
       e.target.value = '';
     }
   };
@@ -109,6 +131,7 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
       {
         'Client Name': 'SBI',
         'Branch Name': 'Marine Lines',
+        'Industry': 'Banking',
         'Address': '123 Main Street',
         'City': 'Mumbai',
         'State': 'Maharashtra',
@@ -116,15 +139,33 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
         'Audit Type': 'Stock Audit',
         'Audit Date': '2024-01-15',
         'Deadline Date': '2024-01-20',
+        'Duration': '2 Days',
+        'Qualification Required': 'CA / Semi-CA',
         'Fees': 15000,
         'OPE': 2000,
+        'Reimbursement Food': 500,
+        'Reimbursement Conveyance': 1000,
+        'Reimbursement Courier': 200,
+        'Reimbursement Guidelines': 'Actuals as per company limits',
+        'Laptop Required': 'Yes',
+        'Smartphone Required': 'Yes',
+        'Bike Required': 'No',
+        'Additional Info': 'Please carry valid ID proof.'
       },
     ];
 
     const ws = XLSX.utils.json_to_sheet(template);
+    
+    const wscols = [
+      {wch: 15}, {wch: 15}, {wch: 12}, {wch: 25}, {wch: 15}, {wch: 15}, {wch: 10}, 
+      {wch: 15}, {wch: 12}, {wch: 15}, {wch: 10}, {wch: 20}, {wch: 10}, {wch: 10},
+      {wch: 18}, {wch: 25}, {wch: 20}, {wch: 30}, {wch: 15}, {wch: 20}, {wch: 15}, {wch: 30}
+    ];
+    ws['!cols'] = wscols;
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Assignments');
-    XLSX.writeFile(wb, 'assignment_template.xlsx');
+    XLSX.writeFile(wb, 'assignment_template_v2.xlsx');
   };
 
   return (
@@ -135,31 +176,32 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
           Bulk Upload
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Bulk Upload Assignments</DialogTitle>
           <DialogDescription>
-            Upload an Excel file with assignment details
+            Upload an Excel file with detailed assignment requirements.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p className="mb-2">Required columns:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Client Name, Branch Name, Address</li>
-              <li>City, State, Pincode</li>
-              <li>Audit Type, Audit Date, Deadline Date</li>
-              <li>Fees, OPE (optional)</li>
+          <div className="text-sm text-muted-foreground bg-muted/30 p-4 rounded-lg border">
+            <p className="font-semibold text-foreground mb-2">Template now supports full payouts & logistics!</p>
+            <ul className="list-disc list-inside space-y-1 text-xs">
+              <li><strong>Core:</strong> Client Name, Branch, City, State, Dates</li>
+              <li><strong>Payouts:</strong> Fees, OPE, Food, Conveyance, Courier</li>
+              <li><strong>Requirements (Yes/No):</strong> Laptop, Smartphone, Bike</li>
+              <li><strong>Details:</strong> Industry, Duration, Qualification, Info</li>
             </ul>
           </div>
           
-          <Button variant="outline" onClick={downloadTemplate} className="w-full">
-            Download Template
+          <Button variant="outline" onClick={downloadTemplate} className="w-full font-medium">
+            <FileSpreadsheet className="mr-2 h-4 w-4 text-green-600" />
+            Download Updated Template
           </Button>
 
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2 border-t">
             <label htmlFor="file-upload" className="text-sm font-medium">
-              Upload Excel File
+              Upload Filled Template (.xlsx)
             </label>
             <Input
               id="file-upload"
@@ -167,13 +209,14 @@ export function BulkUploadDialog({ userId, onSuccess }: BulkUploadDialogProps) {
               accept=".xlsx,.xls"
               onChange={handleFileUpload}
               disabled={uploading}
+              className="cursor-pointer"
             />
           </div>
 
           {uploading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Upload className="h-4 w-4 animate-pulse" />
-              Processing and uploading file...
+            <div className="flex items-center gap-2 text-sm text-primary font-medium bg-primary/10 p-3 rounded-md">
+              <Upload className="h-4 w-4 animate-bounce" />
+              Processing and uploading assignments...
             </div>
           )}
         </div>

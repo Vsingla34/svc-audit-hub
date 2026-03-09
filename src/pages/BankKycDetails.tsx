@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Upload, CheckCircle2, AlertCircle, Landmark, CreditCard, QrCode, FileSignature, Fingerprint, Clock } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, Landmark, CreditCard, QrCode, FileSignature, Fingerprint, Clock, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function BankKycDetails() {
@@ -36,7 +36,7 @@ export default function BankKycDetails() {
   const fetchBankDetails = async () => {
     setLoading(true);
     try {
-      // Fetch both live bank data and the pending draft from auditor_profiles
+    
       const { data: bankData } = await supabase
         .from('bank_kyc_details')
         .select('*')
@@ -177,11 +177,11 @@ export default function BankKycDetails() {
              </AlertDescription>
           </Alert>
         ) : (
-          <Alert className="bg-amber-50 border-amber-200 text-amber-800 border-l-4 border-l-amber-500">
-             <AlertCircle className="h-4 w-4 text-amber-600" />
-             <AlertTitle>Approval Required</AlertTitle>
+          <Alert className="bg-muted/50 border-muted text-muted-foreground border-l-4 border-l-gray-400">
+             <Info className="h-4 w-4 text-gray-500" />
+             <AlertTitle>Information</AlertTitle>
              <AlertDescription className="font-medium">
-               Any changes made to your banking details or KYC documents will put your profile under review and require Admin approval before being used for payouts.
+               Your bank details are currently live. Note: If you edit and save changes here, your payout profile will temporarily require Admin re-approval.
              </AlertDescription>
           </Alert>
         )}

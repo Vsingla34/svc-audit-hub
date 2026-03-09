@@ -27,16 +27,13 @@ import {
   FileCheck,
   MapPin,
   DollarSign,
-  BarChart3,
   Shield,
   LogOut,
   AlertTriangle,
   FileText,
-  Clock,
   Menu,
   ChevronRight,
   Landmark,
-  Radio,
   BellRing,
   BellOff,
 } from 'lucide-react';
@@ -302,7 +299,6 @@ export const adminNavItems: NavItem[] = [
 // AUDITOR MENU
 export const auditorNavItems: NavItem[] = [
   { title: 'Overview', icon: LayoutDashboard, href: '/auditor/overview', activeId: 'overview' },
-  { title: 'Live Report', icon: Radio, href: '/auditor/live-report', activeId: 'live-report' },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Bank & KYC', icon: Landmark, href: '/bank-kyc' },
   { title: 'Available Jobs', icon: Briefcase, href: '/auditor/available-jobs', activeId: 'available-jobs' },

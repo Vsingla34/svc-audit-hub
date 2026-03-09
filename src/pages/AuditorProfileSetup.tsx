@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, ArrowLeft, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users, Smartphone, Laptop, Bike } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users, Smartphone, Laptop, Bike } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -25,7 +25,7 @@ const INDIAN_STATES = [
 ];
 
 const COMPETENCIES_LIST = [
-  "Assets Verification", "Stock Audits", // <-- NEWLY ADDED COMPETENCIES
+  "Assets Verification", "Stock Audits",
   "Accounting & Bookkeeping", "Financial Reporting & Finalization", "MIS Reporting & Dashboards",
   "Accounts Payable (AP) Management", "Accounts Receivable (AR) Management", "Bank Reconciliation & Cash Management",
   "Fixed Assets Accounting & FAR Management", "Inventory Accounting & Valuation", "Costing & Management Accounting",
@@ -45,7 +45,9 @@ export default function AuditorProfileSetup() {
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ gst: false, resume: false, profilePhoto: false });
-  const [kycStatus, setKycStatus] = useState<string | null>(null);
+  
+  // FIX: Using profile_status instead of kyc_status
+  const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   
@@ -65,9 +67,9 @@ export default function AuditorProfileSetup() {
     manpower_count: 0,
     competencies: [] as string[],
     core_competency: '',
-    has_smartphone: false, // <-- NEW
-    has_laptop: false,     // <-- NEW
-    has_bike: false        // <-- NEW
+    has_smartphone: false, 
+    has_laptop: false,     
+    has_bike: false        
   });
 
   const [qualificationInput, setQualificationInput] = useState('');
@@ -86,7 +88,8 @@ export default function AuditorProfileSetup() {
       .maybeSingle();
 
     if (data) {
-      setKycStatus(data.kyc_status);
+      // FIX: Check profile_status
+      setProfileStatus(data.profile_status || 'unverified');
       setRejectionReason(data.rejection_reason);
       setFormData({
         profile_photo_url: data.profile_photo_url || '',
@@ -188,7 +191,8 @@ export default function AuditorProfileSetup() {
     const { error } = await supabase.from('auditor_profiles').upsert({
       user_id: user.id,
       ...formData,
-      kyc_status: kycStatus === 'approved' || kycStatus === 'pending' ? 'pending' : 'draft', 
+      // FIX: Use profile_status
+      profile_status: profileStatus === 'approved' || profileStatus === 'pending' ? 'pending' : 'draft', 
     }, { onConflict: 'user_id' });
     
     setSavingDraft(false);
@@ -197,7 +201,7 @@ export default function AuditorProfileSetup() {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Draft saved', description: 'Your profile has been saved' });
-      if (kycStatus === 'approved') { setKycStatus('pending'); setIsEditing(false); }
+      if (profileStatus === 'approved') { setProfileStatus('pending'); setIsEditing(false); }
     }
   };
 
@@ -205,7 +209,6 @@ export default function AuditorProfileSetup() {
     e.preventDefault();
     if (!user) return;
 
-    // --- Validation ---
     if (!formData.resume_url) {
       toast({ title: 'Resume Required', description: 'You must upload a resume before submitting.', variant: 'destructive' });
       return;
@@ -224,7 +227,8 @@ export default function AuditorProfileSetup() {
     const { error } = await supabase.from('auditor_profiles').upsert({
       user_id: user.id,
       ...formData,
-      kyc_status: 'pending',
+      // FIX: Use profile_status
+      profile_status: 'pending',
     }, { onConflict: 'user_id' });
     
     setLoading(false);
@@ -233,13 +237,13 @@ export default function AuditorProfileSetup() {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: 'Profile submitted', description: 'Submitted for approval' });
-      setKycStatus('pending');
+      setProfileStatus('pending');
       setIsEditing(false);
     }
   };
 
   const getStatusBadge = () => {
-    switch (kycStatus) {
+    switch (profileStatus) {
       case 'approved': return <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Approved</Badge>;
       case 'pending': return <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">Pending Approval</Badge>;
       case 'rejected': return <Badge className="bg-red-500/10 text-red-600 border-red-500/20">Rejected</Badge>;
@@ -247,7 +251,7 @@ export default function AuditorProfileSetup() {
     }
   };
 
-  const isEditable = (kycStatus !== 'approved' && kycStatus !== 'pending') || (kycStatus === 'approved' && isEditing);
+  const isEditable = (profileStatus !== 'approved' && profileStatus !== 'pending') || (profileStatus === 'approved' && isEditing);
 
   return (
     <DashboardLayout title="My Profile" navItems={auditorNavItems} activeTab="my-profile">
@@ -266,7 +270,7 @@ export default function AuditorProfileSetup() {
               </div>
               <div className="flex items-center gap-3">
                 {getStatusBadge()}
-                {kycStatus === 'approved' && !isEditing && (
+                {profileStatus === 'approved' && !isEditing && (
                     <Button size="sm" variant="outline" onClick={() => setIsEditing(true)} className="gap-2">
                         <Pencil className="h-3 w-3" /> Edit Profile
                     </Button>
@@ -276,8 +280,8 @@ export default function AuditorProfileSetup() {
           </CardHeader>
           
           <CardContent className="p-6 sm:p-8">
-            {kycStatus === 'rejected' && rejectionReason && (
-              <Alert variant="destructive" className="mb-8"><AlertTitle>KYC Rejected</AlertTitle><AlertDescription>{rejectionReason}</AlertDescription></Alert>
+            {profileStatus === 'rejected' && rejectionReason && (
+              <Alert variant="destructive" className="mb-8"><AlertTitle>Profile Rejected</AlertTitle><AlertDescription>{rejectionReason}</AlertDescription></Alert>
             )}
 
             <form onSubmit={handleSubmitForApproval} className="space-y-8">
