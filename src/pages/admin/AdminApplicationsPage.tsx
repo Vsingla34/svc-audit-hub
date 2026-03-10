@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Star, Download, Eye, MapPin, Phone, Mail, MessageSquare, Briefcase, GraduationCap, Users, Navigation, FileText, Landmark, ShieldAlert, CheckCircle2, XCircle, UserCheck, Building2 } from 'lucide-react';
+import { Star, MapPin, Phone, Mail, MessageSquare, Landmark, ShieldAlert, UserCheck, Building2, UserCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -37,16 +37,26 @@ export default function AdminApplicationsPage() {
   const fetchJobApplications = async () => {
     setLoading(true);
     try {
-      const { data: apps } = await supabase
+      const { data: apps, error } = await supabase
         .from('applications')
-        .select(`*, interest_reason, assignment:assignments(client_name, branch_name, city, state, assignment_number), auditor:profiles(full_name, email, id, phone)`)
+        .select(`*, interest_reason, assignment:assignments(client_name, branch_name, city, state, assignment_number, audit_type), auditor:profiles(full_name, email, id, phone)`)
         .eq('status', 'pending')
         .order('applied_at', { ascending: false });
 
+      if (error) throw error;
+
       if (apps) {
-        setApplications(apps);
-        if (apps.length > 0) {
-          const auditorIds = apps.map(app => app.auditor_id);
+        // FIX: Normalize data so it never crashes if Supabase returns an array or null
+        const normalizedApps = apps.map(app => ({
+          ...app,
+          assignment: Array.isArray(app.assignment) ? app.assignment[0] : (app.assignment || {}),
+          auditor: Array.isArray(app.auditor) ? app.auditor[0] : (app.auditor || {})
+        }));
+
+        setApplications(normalizedApps);
+
+        if (normalizedApps.length > 0) {
+          const auditorIds = normalizedApps.map(app => app.auditor_id);
           const { data: profilesData } = await supabase
             .from('auditor_profiles')
             .select('*')
@@ -58,7 +68,7 @@ export default function AdminApplicationsPage() {
         }
       }
     } catch (error: any) {
-      toast.error("Error loading applications data");
+      toast.error("Error loading applications data: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -74,17 +84,26 @@ export default function AdminApplicationsPage() {
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
-      return data || [];
+
+      // FIX: Normalize joined profile data to prevent crashes
+      return (data || []).map(kyc => ({
+        ...kyc,
+        profiles: Array.isArray(kyc.profiles) ? kyc.profiles[0] : (kyc.profiles || {})
+      }));
     }
   });
+
+  const pendingProfiles = pendingKyc.filter((k: any) => k.profile_status === 'pending');
+  const pendingBanks = pendingKyc.filter((k: any) => k.bank_status === 'pending');
 
   const resolveApplication = useMutation({
     mutationFn: async ({ id, action, type, pendingData, userId }: { id: string, action: 'approve' | 'reject', type: 'Profile' | 'Bank', pendingData: any, userId: string }) => {
       const updatePayload: any = {};
+      const safeData = pendingData || {}; // Prevent null pointer crash
 
       if (type === 'Profile') {
         if (action === 'approve') {
-          Object.assign(updatePayload, pendingData); 
+          Object.assign(updatePayload, safeData); 
           updatePayload.profile_status = 'approved';
           await supabase.from('profiles').update({ role: 'auditor' }).eq('id', userId);
         } else {
@@ -93,12 +112,11 @@ export default function AdminApplicationsPage() {
         updatePayload.pending_profile_data = {}; 
       } else {
         if (action === 'approve') {
-          // IMPORTANT: Bank data gets saved to bank_kyc_details table
           const { data: existingBank } = await supabase.from('bank_kyc_details').select('id').eq('user_id', userId).maybeSingle();
           if (existingBank) {
-             await supabase.from('bank_kyc_details').update(pendingData).eq('user_id', userId);
+             await supabase.from('bank_kyc_details').update(safeData).eq('user_id', userId);
           } else {
-             await supabase.from('bank_kyc_details').insert({ user_id: userId, ...pendingData });
+             await supabase.from('bank_kyc_details').insert({ user_id: userId, ...safeData });
           }
           updatePayload.bank_status = 'approved';
         } else {
@@ -125,7 +143,6 @@ export default function AdminApplicationsPage() {
     }
   });
 
-  // FIX: Fetch the bank details before opening the diff modal so we have the "Current Value"
   const handleReviewKycClick = async (auditor: any, type: 'Profile' | 'Bank') => {
     setSelectedKycAuditor(auditor);
     setReviewType(type);
@@ -170,7 +187,7 @@ export default function AdminApplicationsPage() {
     applications.forEach(app => {
       const assignId = app.assignment_id;
       if (!grouped[assignId]) {
-        grouped[assignId] = { assignment: app.assignment, applicants: [] };
+        grouped[assignId] = { assignment: app.assignment || {}, applicants: [] };
       }
       grouped[assignId].applicants.push(app);
     });
@@ -194,7 +211,7 @@ export default function AdminApplicationsPage() {
       await supabase.from('notifications').insert({
         user_id: auditorId,
         title: 'Application Accepted! 🎉',
-        message: `You have been selected for the audit of ${assignment?.client_name} in ${assignment?.city}. Check 'My Assignments' for details.`,
+        message: `You have been selected for the audit of ${assignment?.client_name || 'Client'} in ${assignment?.city || 'Location'}. Check 'My Assignments' for details.`,
         type: 'success',
         related_assignment_id: assignmentId,
         read: false
@@ -207,7 +224,7 @@ export default function AdminApplicationsPage() {
         const notifications = rejectedApps.map(app => ({
           user_id: app.auditor_id,
           title: 'Application Update',
-          message: `Thank you for your interest in ${assignment?.client_name}. Another auditor was selected for this assignment.`,
+          message: `Thank you for your interest in ${assignment?.client_name || 'the client'}. Another auditor was selected for this assignment.`,
           type: 'info',
           related_assignment_id: assignmentId,
           read: false
@@ -232,22 +249,6 @@ export default function AdminApplicationsPage() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  const handleDownloadResume = async (path: string) => { 
-    if(!path) return; 
-    try { 
-      if (path.startsWith('http')) {
-        window.open(path, '_blank');
-        return;
-      }
-      const {data} = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600); 
-      if(data?.signedUrl) {
-        window.open(data.signedUrl, '_blank');
-      } else {
-        toast.error("Could not generate download link");
-      }
-    } catch(e:any) { toast.error(e.message); } 
-  };
-
   const renderBankDetails = () => {
     if (!bankDetails) {
       return (
@@ -264,10 +265,10 @@ export default function AdminApplicationsPage() {
         </h3>
         
         <div className="grid grid-cols-2 gap-4 text-sm bg-muted/10 p-4 rounded-xl border">
-          <div><span className="text-muted-foreground block mb-1">Bank Account Number</span> <span className="font-medium">{bankDetails.bank_account_no}</span></div>
-          <div><span className="text-muted-foreground block mb-1">IFSC Code</span> <span className="font-medium uppercase">{bankDetails.ifsc_code}</span></div>
-          <div><span className="text-muted-foreground block mb-1">PAN Number</span> <span className="font-medium uppercase">{bankDetails.pan_number}</span></div>
-          <div><span className="text-muted-foreground block mb-1">Aadhaar Number</span> <span className="font-medium">{bankDetails.aadhaar_number}</span></div>
+          <div><span className="text-muted-foreground block mb-1">Bank Account Number</span> <span className="font-medium">{bankDetails.bank_account_no || 'N/A'}</span></div>
+          <div><span className="text-muted-foreground block mb-1">IFSC Code</span> <span className="font-medium uppercase">{bankDetails.ifsc_code || 'N/A'}</span></div>
+          <div><span className="text-muted-foreground block mb-1">PAN Number</span> <span className="font-medium uppercase">{bankDetails.pan_number || 'N/A'}</span></div>
+          <div><span className="text-muted-foreground block mb-1">Aadhaar Number</span> <span className="font-medium">{bankDetails.aadhaar_number || 'N/A'}</span></div>
         </div>
 
         <div>
@@ -303,29 +304,29 @@ export default function AdminApplicationsPage() {
 
   return (
     <DashboardLayout title="Applications & KYC" navItems={adminNavItems} activeTab="applications">
-      <div className="space-y-8 max-w-7xl mx-auto py-6">
+      <div className="space-y-10 max-w-7xl mx-auto py-6">
         
-        {/* --- PENDING JOB APPLICATIONS SECTION --- */}
-        <div className="space-y-6">
+        {/* --- SECTION 1: PENDING JOB APPLICATIONS --- */}
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold tracking-tight">Assignment Applications</h2>
-            <Badge variant="secondary" className="text-base">{applications.length} total pending</Badge>
+            <Badge variant="secondary" className="text-base">{applications.length} pending</Badge>
           </div>
 
           {applications.length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">No pending assignment applications</CardContent></Card>
+            <Card><CardContent className="py-12 text-center text-muted-foreground bg-muted/10 border-dashed">No pending assignment applications</CardContent></Card>
           ) : (
             <div className="grid gap-6">
               {Object.entries(groupedApplications).map(([assignmentId, group]) => (
-                <Card key={assignmentId} className="border-l-4 border-l-primary shadow-sm overflow-hidden">
+                <Card key={assignmentId} className="border-l-4 border-l-[#4338CA] shadow-sm overflow-hidden">
                   <CardHeader className="bg-muted/10 pb-3 border-b">
                     <div className="flex justify-between items-start">
                       <div>
-                        <CardTitle className="text-lg">{group.assignment.client_name} - {group.assignment.branch_name}</CardTitle>
+                        <CardTitle className="text-lg">{group.assignment?.client_name || 'Unknown Client'} - {group.assignment?.branch_name || 'N/A'}</CardTitle>
                         <CardDescription className="flex items-center gap-2 mt-1">
-                          <MapPin className="h-3 w-3" /> {group.assignment.city}, {group.assignment.state}
+                          <MapPin className="h-3 w-3" /> {group.assignment?.city || 'Unknown'}, {group.assignment?.state || 'Unknown'}
                           <span className="text-muted-foreground/30">•</span>
-                          <span>{group.assignment.audit_type}</span>
+                          <span>{group.assignment?.audit_type || 'Audit'}</span>
                         </CardDescription>
                       </div>
                       <Badge variant="outline" className="bg-background">{group.applicants.length} Applicants</Badge>
@@ -348,9 +349,9 @@ export default function AdminApplicationsPage() {
                           return (
                             <TableRow key={app.id}>
                               <TableCell>
-                                <div className="font-medium text-base">{app.auditor?.full_name}</div>
+                                <div className="font-medium text-base">{app.auditor?.full_name || 'Unknown User'}</div>
                                 <div className="text-xs text-muted-foreground flex flex-col gap-0.5 mt-0.5">
-                                  <span className="flex items-center gap-1"><Mail className="h-3 w-3"/> {app.auditor?.email}</span>
+                                  <span className="flex items-center gap-1"><Mail className="h-3 w-3"/> {app.auditor?.email || 'N/A'}</span>
                                   <span className="flex items-center gap-1"><Phone className="h-3 w-3"/> {app.auditor?.phone || 'N/A'}</span>
                                 </div>
                               </TableCell>
@@ -362,10 +363,10 @@ export default function AdminApplicationsPage() {
                                 </div>
                               </TableCell>
                               <TableCell className="text-muted-foreground text-sm">
-                                {new Date(app.applied_at).toLocaleDateString()}
+                                {app.applied_at ? new Date(app.applied_at).toLocaleDateString() : 'Unknown'}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Button size="sm" variant="outline" onClick={() => openApplicationDetail(app)}>
+                                <Button size="sm" variant="outline" className="border-[#4338CA]/30 text-[#4338CA] hover:bg-[#4338CA]/10" onClick={() => openApplicationDetail(app)}>
                                   Review
                                 </Button>
                               </TableCell>
@@ -383,40 +384,34 @@ export default function AdminApplicationsPage() {
 
         <Separator />
 
-        {/* --- NEW SEPARATED KYC APPROVALS SECTION --- */}
-        <div className="space-y-6">
+        {/* --- SECTION 2: PROFILE APPROVALS --- */}
+        <div className="space-y-4">
            <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold tracking-tight">Profile & Bank KYC Approvals</h2>
-            <Badge variant="secondary" className="text-base">{pendingKyc.length} pending</Badge>
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <UserCircle className="h-6 w-6 text-blue-600" /> Auditor Profile Approvals
+            </h2>
+            <Badge variant="secondary" className="text-base bg-blue-100 text-blue-700 hover:bg-blue-100 border-none">{pendingProfiles.length} pending</Badge>
           </div>
+          
           <Card>
             <CardContent className="p-0">
-              {pendingKyc.length === 0 ? <p className="text-center py-12 text-muted-foreground">No pending profile or bank updates to review.</p> : (
+              {pendingProfiles.length === 0 ? <p className="text-center py-12 text-muted-foreground bg-muted/10 border-dashed border">No pending profiles to review.</p> : (
                 <div className="grid gap-0 divide-y">
-                  {pendingKyc.map((kyc: any) => (
+                  {pendingProfiles.map((kyc: any) => (
                     <div key={kyc.id} className="flex flex-col md:flex-row items-center justify-between p-5 bg-card hover:bg-muted/10 transition-colors">
                       <div className="flex items-center gap-4 mb-4 md:mb-0">
-                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
+                        <div className="h-12 w-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg">
                           {kyc.profiles?.full_name?.charAt(0) || 'U'}
                         </div>
                         <div>
                           <h4 className="font-semibold text-foreground">{kyc.profiles?.full_name || 'Unknown Auditor'}</h4>
-                          <p className="text-sm text-muted-foreground">{kyc.profiles?.email}</p>
+                          <p className="text-sm text-muted-foreground">{kyc.profiles?.email || 'No email'}</p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 w-full md:w-auto">
-                        {kyc.profile_status === 'pending' && (
-                          <Button onClick={() => handleReviewKycClick(kyc, 'Profile')} variant="outline" className="flex-1 md:flex-none border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700">
-                            <UserCheck className="h-4 w-4 mr-2" /> Review Profile
-                          </Button>
-                        )}
-                        {kyc.bank_status === 'pending' && (
-                          <Button onClick={() => handleReviewKycClick(kyc, 'Bank')} variant="outline" className="flex-1 md:flex-none border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700">
-                            <Building2 className="h-4 w-4 mr-2" /> Review Bank
-                          </Button>
-                        )}
-                      </div>
+                      <Button onClick={() => handleReviewKycClick(kyc, 'Profile')} variant="outline" className="w-full md:w-auto border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 shadow-sm">
+                        <UserCheck className="h-4 w-4 mr-2" /> Review Profile Details
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -424,6 +419,45 @@ export default function AdminApplicationsPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Separator />
+
+        {/* --- SECTION 3: BANK & KYC APPROVALS --- */}
+        <div className="space-y-4">
+           <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Landmark className="h-6 w-6 text-emerald-600" /> Bank & Identity Approvals
+            </h2>
+            <Badge variant="secondary" className="text-base bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none">{pendingBanks.length} pending</Badge>
+          </div>
+          
+          <Card>
+            <CardContent className="p-0">
+              {pendingBanks.length === 0 ? <p className="text-center py-12 text-muted-foreground bg-muted/10 border-dashed border">No pending bank details to review.</p> : (
+                <div className="grid gap-0 divide-y">
+                  {pendingBanks.map((kyc: any) => (
+                    <div key={kyc.id} className="flex flex-col md:flex-row items-center justify-between p-5 bg-card hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-4 mb-4 md:mb-0">
+                        <div className="h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-lg">
+                          {kyc.profiles?.full_name?.charAt(0) || 'U'}
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-foreground">{kyc.profiles?.full_name || 'Unknown Auditor'}</h4>
+                          <p className="text-sm text-muted-foreground">{kyc.profiles?.email || 'No email'}</p>
+                        </div>
+                      </div>
+
+                      <Button onClick={() => handleReviewKycClick(kyc, 'Bank')} variant="outline" className="w-full md:w-auto border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 shadow-sm">
+                        <Building2 className="h-4 w-4 mr-2" /> Review Bank & KYC
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
       </div>
 
       {/* --- DIALOGS --- */}
@@ -448,15 +482,15 @@ export default function AdminApplicationsPage() {
                         </AvatarFallback>
                      </Avatar>
                      <div>
-                        <h3 className="font-bold text-lg">{viewingApplication.auditor?.full_name}</h3>
+                        <h3 className="font-bold text-lg">{viewingApplication.auditor?.full_name || 'Unknown Auditor'}</h3>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <MapPin className="h-3 w-3" /> 
-                          {auditorDetails[viewingApplication.auditor_id].base_city}, {auditorDetails[viewingApplication.auditor_id].base_state}
+                          {auditorDetails[viewingApplication.auditor_id].base_city || 'Unknown'}, {auditorDetails[viewingApplication.auditor_id].base_state || 'Unknown'}
                         </div>
                      </div>
                   </div>
                   <div className="space-y-1 pt-2">
-                     <div className="flex items-center gap-2 text-sm"><Mail className="h-4 w-4 text-muted-foreground"/> {viewingApplication.auditor?.email}</div>
+                     <div className="flex items-center gap-2 text-sm"><Mail className="h-4 w-4 text-muted-foreground"/> {viewingApplication.auditor?.email || 'N/A'}</div>
                      <div className="flex items-center gap-2 text-sm"><Phone className="h-4 w-4 text-muted-foreground"/> {viewingApplication.auditor?.phone || 'N/A'}</div>
                   </div>
                 </div>
@@ -464,12 +498,12 @@ export default function AdminApplicationsPage() {
                 <div className="grid grid-cols-2 gap-3">
                    <div className="bg-background p-3 rounded-lg border">
                       <div className="text-xs text-muted-foreground uppercase font-bold">Experience</div>
-                      <div className="text-lg font-semibold">{auditorDetails[viewingApplication.auditor_id].experience_years} Years</div>
+                      <div className="text-lg font-semibold">{auditorDetails[viewingApplication.auditor_id].experience_years || 0} Years</div>
                    </div>
                    <div className="bg-background p-3 rounded-lg border">
                       <div className="text-xs text-muted-foreground uppercase font-bold">Rating</div>
                       <div className="flex items-center gap-1 text-lg font-semibold">
-                         {auditorDetails[viewingApplication.auditor_id].rating} <Star className="h-4 w-4 text-amber-500 fill-amber-500"/>
+                         {auditorDetails[viewingApplication.auditor_id].rating || 0} <Star className="h-4 w-4 text-amber-500 fill-amber-500"/>
                       </div>
                    </div>
                    <div className="bg-background p-3 rounded-lg border col-span-2">
@@ -506,13 +540,13 @@ export default function AdminApplicationsPage() {
         </DialogContent>
       </Dialog>
       
-      {/* --- FIX: DIFF MODAL CURRENT DATA OVERRIDE --- */}
+      {/* --- DIFF MODAL --- */}
       <Dialog open={!!selectedKycAuditor} onOpenChange={(open) => !open && setSelectedKycAuditor(null)}>
         <DialogContent className="max-w-4xl p-0 overflow-hidden border-0">
           {selectedKycAuditor && reviewType && (
             <ApprovalDiffView 
               type={reviewType}
-              currentData={reviewType === 'Profile' ? selectedKycAuditor : (bankDetails || {})} // Passes actual bank records!
+              currentData={reviewType === 'Profile' ? selectedKycAuditor : (bankDetails || {})} 
               pendingData={reviewType === 'Profile' ? selectedKycAuditor.pending_profile_data : selectedKycAuditor.pending_bank_data}
               isProcessing={resolveApplication.isPending}
               onApprove={() => resolveApplication.mutate({ 

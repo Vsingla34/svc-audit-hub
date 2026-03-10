@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { z } from 'zod';
-import { Shield, Phone, Mail, User, Lock, KeyRound, Loader2 } from 'lucide-react';
+import { Phone, Mail, User, Lock, KeyRound, Loader2 } from 'lucide-react';
 
 // --- Validation Schemas ---
 const emailSchema = z.string().trim().email('Please enter a valid email address').max(255);
@@ -36,11 +36,13 @@ export default function Auth() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth(); 
 
   useEffect(() => {
-    if (user) navigate('/dashboard');
-  }, [user, navigate]);
+    if (user && !authLoading) {
+      navigate('/dashboard');
+    }
+  }, [user, authLoading, navigate]);
 
   const validate = (schema: z.ZodObject<any>, data: any) => {
     const result = schema.safeParse(data);
@@ -147,7 +149,7 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 relative overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-white relative overflow-hidden">
       {/* --- New Indigo Background Decor --- */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 pointer-events-none">
           <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-[#4338CA]/10 blur-3xl" />
@@ -156,11 +158,17 @@ export default function Auth() {
 
       <main className="flex-1 flex items-center justify-center p-6 z-10">
         <div className="w-full max-w-md">
-          <div className="flex items-center justify-center gap-3 mb-8">
-            <div className="h-14 w-14 rounded-2xl bg-[#4338CA] flex items-center justify-center shadow-lg shadow-[#4338CA]/25">
-              <Shield className="h-8 w-8 text-white" />
+          
+          {/* --- BRANDING HEADER --- */}
+          <div className="flex flex-col items-center justify-center gap-3 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* The actual logo displayed large and clean */}
+            <img src="/logo.png" alt="StockCheck360 Logo" className="h-16 md:h-20 w-auto object-contain drop-shadow-sm" />
+            
+            <div className="flex items-center gap-3 mt-1">
+              <div className="h-[2px] w-8 bg-[#4338CA]/30 rounded-full"></div>
+              <span className="text-xs font-bold text-[#4338CA] uppercase tracking-[0.3em]">Audit Flow</span>
+              <div className="h-[2px] w-8 bg-[#4338CA]/30 rounded-full"></div>
             </div>
-            <span className="font-heading text-3xl font-bold text-[#4338CA]">StockCheck360</span>
           </div>
 
           <Card className="border-t-4 border-t-[#4338CA] shadow-xl bg-white/90 backdrop-blur-sm">
@@ -217,8 +225,8 @@ export default function Auth() {
                         />
                       </div>
                     </div>
-                    <Button type="submit" className="w-full bg-[#4338CA] hover:bg-[#4338CA]/90" size="lg" disabled={loading}>
-                      {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : 'Sign In'}
+                    <Button type="submit" className="w-full bg-[#4338CA] hover:bg-[#4338CA]/90" size="lg" disabled={loading || authLoading}>
+                      {(loading || authLoading) ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : 'Sign In'}
                     </Button>
                   </form>
                 </TabsContent>
@@ -317,8 +325,8 @@ export default function Auth() {
                       </div>
                     )}
 
-                    <Button type="submit" className="w-full bg-[#4338CA] hover:bg-[#4338CA]/90" size="lg" disabled={loading}>
-                      {loading 
+                    <Button type="submit" className="w-full bg-[#4338CA] hover:bg-[#4338CA]/90" size="lg" disabled={loading || authLoading}>
+                      {(loading || authLoading) 
                         ? (isOtpSent ? <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Verifying...</> : <><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Sending...</>) 
                         : (isOtpSent ? 'Verify & Create Account' : 'Send OTP & Sign Up')
                       }

@@ -23,14 +23,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-// Helper: Forces a promise to reject if it takes too long
-const withTimeout = async <T,>(p: Promise<T>, ms = 4000): Promise<T> => {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms)),
-  ]);
-};
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -39,94 +31,91 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isProfileComplete, setIsProfileComplete] = useState(false);
   const navigate = useNavigate();
 
-  const fetchUserContext = async (userId: string) => {
+  const fetchUserContext = async (userId: string, userEmail?: string) => {
+    
+    // --- THE SUPER ADMIN BYPASS ---
+    // This guarantees the owner account NEVER gets locked out of the admin panel,
+    // even if Supabase Row Level Security (RLS) accidentally blocks database reads.
+    if (userEmail === 'info.stockcheck360@gmail.com') {
+      setUserRole('admin');
+      setIsProfileComplete(true);
+      return; 
+    }
+
     try {
-      console.log("Fetching context for user:", userId);
+      const [profileRoleRes, userRoleRes, auditorProfileRes] = await Promise.all([
+        supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
+        supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
+        supabase.from("auditor_profiles").select("id").eq("user_id", userId).maybeSingle()
+      ]);
 
-      // Wrap the entire batch fetch in a timeout
-      // This ensures the app NEVER gets stuck on "Loading..."
-      const [profileRoleData, userRoleData, auditorProfileData] = await withTimeout(
-        Promise.all([
-          supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
-          supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
-          supabase.from("auditor_profiles").select("id").eq("user_id", userId).maybeSingle()
-        ]), 
-        5000 // 5 Second Hard Timeout
-      );
+      let finalRole = 'auditor'; // Default fallback
+      const pRole = profileRoleRes.data?.role?.toLowerCase().trim();
+      const uRole = userRoleRes.data?.role?.toLowerCase().trim();
 
-      // 1. Determine Role
-      let role = 'auditor'; // Default fallback
-      if (profileRoleData.data?.role) {
-        role = profileRoleData.data.role;
-      } else if (userRoleData.data?.role) {
-        role = userRoleData.data.role;
-      }
-      setUserRole(role);
+      if (uRole === 'admin' || uRole === 'super_admin') finalRole = uRole;
+      else if (pRole === 'admin' || pRole === 'super_admin') finalRole = pRole;
+      else if (pRole) finalRole = pRole;
+      else if (uRole) finalRole = uRole;
 
-      // 2. Determine Profile Completion (Success)
-      setIsProfileComplete(!!auditorProfileData.data);
-
+      setUserRole(finalRole);
+      setIsProfileComplete(!!auditorProfileRes.data);
     } catch (e: any) {
-      console.error("Context fetch failed or timed out:", e.message);
-      
-      // FALLBACKS ON ERROR/TIMEOUT:
-      // We allow the user in as an 'auditor' with incomplete profile
-      // so they can at least see the setup page or dashboard.
+      console.error("Context fetch failed:", e.message);
       if (!userRole) setUserRole('auditor');
-      // We keep isProfileComplete false to be safe, so they are directed to check profile
-      setIsProfileComplete(false); 
     }
   };
 
   useEffect(() => {
     let mounted = true;
 
-    const bootstrap = async () => {
+    const initializeAuth = async () => {
       try {
-        // 1. Get Session
-        const { data } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         if (!mounted) return;
 
-        const s = data.session ?? null;
-        setSession(s);
-        setUser(s?.user ?? null);
+        setSession(session);
+        setUser(session?.user ?? null);
 
-        // 2. If User exists, fetch details
-        if (s?.user?.id) {
-          await fetchUserContext(s.user.id);
-        } else {
-          setUserRole(null);
-          setIsProfileComplete(false);
+        if (session?.user) {
+          // Pass both ID and Email to the context fetcher
+          await fetchUserContext(session.user.id, session.user.email);
         }
       } catch (e) {
-        console.error("Auth bootstrap failed:", e);
+        console.error("Auth init error:", e);
       } finally {
-        // 3. ALWAYS set loading to false, no matter what happens
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
-    bootstrap();
+    // Load session safely on mount
+    initializeAuth();
 
-    // Listen for auth changes (login/logout/refresh)
+    // Listen for auth changes cleanly (ignores the redundant INITIAL_SESSION event)
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
+      if (event === 'INITIAL_SESSION') return; 
 
-      setSession(currentSession);
-      setUser(currentSession?.user ?? null);
-
-      if (currentSession?.user?.id) {
-        // Fetch context in background without blocking UI (loading is already false)
-        fetchUserContext(currentSession.user.id);
-      } else {
+      if (event === 'SIGNED_IN') {
+        setLoading(true);
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        if (currentSession?.user) {
+          // Pass both ID and Email during a new login
+          await fetchUserContext(currentSession.user.id, currentSession.user.email);
+        }
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
         setUserRole(null);
         setIsProfileComplete(false);
-      }
-
-      if (event === "SIGNED_OUT") {
+        setLoading(false);
         navigate("/auth");
+      } else {
+        // Handles token refreshes seamlessly
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
       }
     });
 
@@ -138,7 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     try {
-        setLoading(true); // Optional: show loading during sign out
+        setLoading(true); 
         await supabase.auth.signOut();
         navigate("/auth");
     } finally {

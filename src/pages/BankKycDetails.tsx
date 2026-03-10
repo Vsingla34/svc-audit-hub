@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { Upload, CheckCircle2, AlertCircle, Landmark, CreditCard, QrCode, FileSignature, Fingerprint, Clock, Info } from 'lucide-react';
+import { Upload, CheckCircle2, AlertCircle, Landmark, CreditCard, QrCode, FileSignature, Fingerprint, Clock, Info, ExternalLink } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export default function BankKycDetails() {
@@ -105,6 +105,30 @@ export default function BankKycDetails() {
     } finally {
       setUploadingField(null);
       e.target.value = ''; 
+    }
+  };
+
+  // Securely preview an uploaded document using temporary signed URLs
+  const handleViewDocument = async (path: string) => {
+    if (!path) return;
+    try {
+      if (path.startsWith('http')) {
+        window.open(path, '_blank');
+        return;
+      }
+      
+      toast('Generating secure document link...', { icon: <Clock className="h-4 w-4 text-blue-500" /> });
+      
+      const { data, error } = await supabase.storage
+        .from('kyc-documents')
+        .createSignedUrl(path, 3600); // 1-hour expiration
+        
+      if (error) throw error;
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, '_blank');
+      }
+    } catch (error: any) {
+      toast.error('Failed to load document preview.');
     }
   };
 
@@ -212,48 +236,73 @@ export default function BankKycDetails() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 
                 {/* AADHAAR FRONT */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 font-medium"><Fingerprint className="h-4 w-4" /> Aadhaar Front <span className="text-red-500">*</span></Label>
-                  <label htmlFor="aadhaar_front_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center transition-colors ${formData.aadhaar_front_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
-                    {uploadingField === 'aadhaar_front_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.aadhaar_front_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload Image/PDF</span></>}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 font-medium mb-1"><Fingerprint className="h-4 w-4" /> Aadhaar Front <span className="text-red-500">*</span></Label>
+                  <label htmlFor="aadhaar_front_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-28 flex flex-col items-center justify-center transition-colors ${formData.aadhaar_front_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
+                    {uploadingField === 'aadhaar_front_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.aadhaar_front_url ? <><CheckCircle2 className="h-6 w-6 text-green-500 mb-1" /><span className="text-sm font-medium text-green-700">Uploaded</span><span className="text-[10px] text-muted-foreground mt-1">Click to replace</span></> : <><Upload className="h-5 w-5 text-muted-foreground mb-1" /><span className="text-sm font-medium">Upload File</span></>}
                   </label>
                   <input id="aadhaar_front_url" type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleFileUpload(e, 'aadhaar_front_url')} disabled={uploadingField !== null} />
+                  {formData.aadhaar_front_url && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.aadhaar_front_url)} className="w-full text-[#4338CA] border-[#4338CA]/20 hover:bg-[#4338CA]/5">
+                      <ExternalLink className="h-3.5 w-3.5 mr-2" /> View Document
+                    </Button>
+                  )}
                 </div>
 
                 {/* AADHAAR BACK */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 font-medium"><Fingerprint className="h-4 w-4" /> Aadhaar Back <span className="text-red-500">*</span></Label>
-                  <label htmlFor="aadhaar_back_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center transition-colors ${formData.aadhaar_back_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
-                    {uploadingField === 'aadhaar_back_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.aadhaar_back_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload Image/PDF</span></>}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 font-medium mb-1"><Fingerprint className="h-4 w-4" /> Aadhaar Back <span className="text-red-500">*</span></Label>
+                  <label htmlFor="aadhaar_back_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-28 flex flex-col items-center justify-center transition-colors ${formData.aadhaar_back_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
+                    {uploadingField === 'aadhaar_back_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.aadhaar_back_url ? <><CheckCircle2 className="h-6 w-6 text-green-500 mb-1" /><span className="text-sm font-medium text-green-700">Uploaded</span><span className="text-[10px] text-muted-foreground mt-1">Click to replace</span></> : <><Upload className="h-5 w-5 text-muted-foreground mb-1" /><span className="text-sm font-medium">Upload File</span></>}
                   </label>
                   <input id="aadhaar_back_url" type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleFileUpload(e, 'aadhaar_back_url')} disabled={uploadingField !== null} />
+                  {formData.aadhaar_back_url && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.aadhaar_back_url)} className="w-full text-[#4338CA] border-[#4338CA]/20 hover:bg-[#4338CA]/5">
+                      <ExternalLink className="h-3.5 w-3.5 mr-2" /> View Document
+                    </Button>
+                  )}
                 </div>
 
                 {/* PAN CARD UPLOAD */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 font-medium"><CreditCard className="h-4 w-4" /> PAN Card <span className="text-red-500">*</span></Label>
-                  <label htmlFor="pan_card_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center transition-colors ${formData.pan_card_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
-                    {uploadingField === 'pan_card_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.pan_card_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload Image/PDF</span></>}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 font-medium mb-1"><CreditCard className="h-4 w-4" /> PAN Card <span className="text-red-500">*</span></Label>
+                  <label htmlFor="pan_card_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-28 flex flex-col items-center justify-center transition-colors ${formData.pan_card_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
+                    {uploadingField === 'pan_card_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.pan_card_url ? <><CheckCircle2 className="h-6 w-6 text-green-500 mb-1" /><span className="text-sm font-medium text-green-700">Uploaded</span><span className="text-[10px] text-muted-foreground mt-1">Click to replace</span></> : <><Upload className="h-5 w-5 text-muted-foreground mb-1" /><span className="text-sm font-medium">Upload File</span></>}
                   </label>
                   <input id="pan_card_url" type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleFileUpload(e, 'pan_card_url')} disabled={uploadingField !== null} />
+                  {formData.pan_card_url && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.pan_card_url)} className="w-full text-[#4338CA] border-[#4338CA]/20 hover:bg-[#4338CA]/5">
+                      <ExternalLink className="h-3.5 w-3.5 mr-2" /> View Document
+                    </Button>
+                  )}
                 </div>
 
                 {/* CANCELLED CHEQUE UPLOAD */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 font-medium"><FileSignature className="h-4 w-4" /> Cancelled Cheque <span className="text-red-500">*</span></Label>
-                  <label htmlFor="cancelled_cheque_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center transition-colors ${formData.cancelled_cheque_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
-                    {uploadingField === 'cancelled_cheque_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.cancelled_cheque_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload Image/PDF</span></>}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 font-medium mb-1"><FileSignature className="h-4 w-4" /> Cancelled Cheque <span className="text-red-500">*</span></Label>
+                  <label htmlFor="cancelled_cheque_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-28 flex flex-col items-center justify-center transition-colors ${formData.cancelled_cheque_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
+                    {uploadingField === 'cancelled_cheque_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.cancelled_cheque_url ? <><CheckCircle2 className="h-6 w-6 text-green-500 mb-1" /><span className="text-sm font-medium text-green-700">Uploaded</span><span className="text-[10px] text-muted-foreground mt-1">Click to replace</span></> : <><Upload className="h-5 w-5 text-muted-foreground mb-1" /><span className="text-sm font-medium">Upload File</span></>}
                   </label>
                   <input id="cancelled_cheque_url" type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleFileUpload(e, 'cancelled_cheque_url')} disabled={uploadingField !== null} />
+                  {formData.cancelled_cheque_url && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.cancelled_cheque_url)} className="w-full text-[#4338CA] border-[#4338CA]/20 hover:bg-[#4338CA]/5">
+                      <ExternalLink className="h-3.5 w-3.5 mr-2" /> View Document
+                    </Button>
+                  )}
                 </div>
 
                 {/* UPI QR CODE UPLOAD */}
-                <div className="space-y-3">
-                  <Label className="flex items-center gap-2 font-medium"><QrCode className="h-4 w-4" /> UPI QR Code <span className="text-muted-foreground font-normal text-xs">(Optional)</span></Label>
-                  <label htmlFor="upi_qr_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-32 flex flex-col items-center justify-center transition-colors ${formData.upi_qr_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
-                    {uploadingField === 'upi_qr_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.upi_qr_url ? <><CheckCircle2 className="h-8 w-8 text-green-500 mb-2" /><span className="text-sm font-medium text-green-700">Uploaded</span></> : <><Upload className="h-6 w-6 text-muted-foreground mb-2" /><span className="text-sm font-medium">Upload QR Image</span></>}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2 font-medium mb-1"><QrCode className="h-4 w-4" /> UPI QR <span className="text-muted-foreground font-normal text-xs">(Optional)</span></Label>
+                  <label htmlFor="upi_qr_url" className={`cursor-pointer border-2 border-dashed rounded-xl h-28 flex flex-col items-center justify-center transition-colors ${formData.upi_qr_url ? 'border-green-500 bg-green-50/50 hover:bg-green-50' : 'border-[#4338CA]/30 hover:bg-[#4338CA]/5 hover:border-[#4338CA]/50 bg-white'}`}>
+                    {uploadingField === 'upi_qr_url' ? <span className="text-sm text-muted-foreground animate-pulse">Uploading...</span> : formData.upi_qr_url ? <><CheckCircle2 className="h-6 w-6 text-green-500 mb-1" /><span className="text-sm font-medium text-green-700">Uploaded</span><span className="text-[10px] text-muted-foreground mt-1">Click to replace</span></> : <><Upload className="h-5 w-5 text-muted-foreground mb-1" /><span className="text-sm font-medium">Upload Image</span></>}
                   </label>
                   <input id="upi_qr_url" type="file" accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e, 'upi_qr_url')} disabled={uploadingField !== null} />
+                  {formData.upi_qr_url && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.upi_qr_url)} className="w-full text-[#4338CA] border-[#4338CA]/20 hover:bg-[#4338CA]/5">
+                      <ExternalLink className="h-3.5 w-3.5 mr-2" /> View Document
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>

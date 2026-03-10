@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, MapPin, FileText, Briefcase, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users, Smartphone, Laptop, Bike } from 'lucide-react';
+import { Upload, MapPin, FileText, Briefcase, Save, Send, AlertCircle, GraduationCap, Navigation, Plus, X, Pencil, Users, Smartphone, Laptop, Bike, CheckCircle2, ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -46,7 +46,6 @@ export default function AuditorProfileSetup() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ gst: false, resume: false, profilePhoto: false });
   
-  // FIX: Using profile_status instead of kyc_status
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -88,7 +87,6 @@ export default function AuditorProfileSetup() {
       .maybeSingle();
 
     if (data) {
-      // FIX: Check profile_status
       setProfileStatus(data.profile_status || 'unverified');
       setRejectionReason(data.rejection_reason);
       setFormData({
@@ -148,6 +146,30 @@ export default function AuditorProfileSetup() {
     }
   };
 
+  // NEW: Securely preview an uploaded document
+  const handleViewDocument = async (path: string) => {
+    if (!path) return;
+    try {
+      if (path.startsWith('http')) {
+        window.open(path, '_blank');
+        return;
+      }
+      
+      toast({ title: 'Opening...', description: 'Generating secure document link...' });
+      
+      const { data, error } = await supabase.storage
+        .from('kyc-documents')
+        .createSignedUrl(path, 3600); // 1-hour expiration
+        
+      if (error) throw error;
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, '_blank');
+      }
+    } catch (error: any) {
+      toast({ title: 'Error', description: 'Failed to load document preview.', variant: 'destructive' });
+    }
+  };
+
   const addQualification = () => {
     if (qualificationInput.trim() && !formData.qualifications.includes(qualificationInput.trim())) {
       setFormData({ ...formData, qualifications: [...formData.qualifications, qualificationInput.trim()] });
@@ -191,7 +213,6 @@ export default function AuditorProfileSetup() {
     const { error } = await supabase.from('auditor_profiles').upsert({
       user_id: user.id,
       ...formData,
-      // FIX: Use profile_status
       profile_status: profileStatus === 'approved' || profileStatus === 'pending' ? 'pending' : 'draft', 
     }, { onConflict: 'user_id' });
     
@@ -227,7 +248,6 @@ export default function AuditorProfileSetup() {
     const { error } = await supabase.from('auditor_profiles').upsert({
       user_id: user.id,
       ...formData,
-      // FIX: Use profile_status
       profile_status: 'pending',
     }, { onConflict: 'user_id' });
     
@@ -289,9 +309,16 @@ export default function AuditorProfileSetup() {
               {/* Profile Photo */}
               <div className="space-y-4">
                  <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Profile Photo (Optional)</h3>
-                 <div className="flex items-center gap-4">
+                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                     <Input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'profilePhoto')} disabled={!isEditable} className="max-w-xs" />
-                    {formData.profile_photo_url && <span className="text-sm text-green-600">✓ Uploaded</span>}
+                    {formData.profile_photo_url && (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-green-600 flex items-center gap-1"><CheckCircle2 className="h-4 w-4"/> Uploaded</span>
+                        <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.profile_photo_url)} className="h-8 gap-1.5 text-primary border-primary/20 hover:bg-primary/5">
+                          <ExternalLink className="h-3.5 w-3.5" /> View Photo
+                        </Button>
+                      </div>
+                    )}
                  </div>
               </div>
 
@@ -322,12 +349,18 @@ export default function AuditorProfileSetup() {
                     <Input value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value.toUpperCase()})} disabled={!isEditable} />
                   </div>
                   <div>
-                    <Label className="font-bold">Resume (PDF) *</Label>
-                    <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable} />
-                    {formData.resume_url ? 
-                        <span className="text-xs text-green-600">✓ Resume Uploaded</span> 
-                        : <span className="text-xs text-destructive">Required for approval</span>
-                    }
+                    <Label className="font-bold block mb-2">Resume (PDF) *</Label>
+                    <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable} className="mb-2" />
+                    {formData.resume_url ? (
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-medium text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5"/> Uploaded</span> 
+                          <Button type="button" variant="link" onClick={() => handleViewDocument(formData.resume_url)} className="h-auto p-0 text-primary text-xs flex items-center gap-1">
+                            <ExternalLink className="h-3.5 w-3.5" /> View Resume
+                          </Button>
+                        </div>
+                    ) : (
+                        <span className="text-xs text-destructive">Required for approval</span>
+                    )}
                   </div>
                 </div>
               </div>
