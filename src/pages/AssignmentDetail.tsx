@@ -314,13 +314,39 @@ export default function AssignmentDetail() {
                   {displayTitle}
                 </CardTitle>
                 
-                <CardDescription className="flex flex-col gap-1 mt-2 text-base">
-                  <span className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4" /> 
-                    {assignment.city}, {assignment.state}
-                  </span>
+                <CardDescription className="flex flex-col gap-2 mt-2 text-base">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-primary shrink-0" /> 
+                      {assignment.city}, {assignment.state} {assignment.pincode && `- ${assignment.pincode}`}
+                    </span>
+                    
+                    {/* NEW: Sleek inline map button */}
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      className="h-6 text-[10px] uppercase tracking-wider font-bold px-2 py-0 bg-primary/10 hover:bg-primary/20 text-primary border-0"
+                      onClick={() => {
+                        const query = assignment.address 
+                          ? `${assignment.address}, ${assignment.city}, ${assignment.state} ${assignment.pincode || ''}, India`
+                          : `${assignment.city}, ${assignment.state}, India`;
+                        window.open(`https://maps.google.com/?q=${encodeURIComponent(query)}`);
+                      }}
+                    >
+                      <Navigation className="h-3 w-3 mr-1" /> View Map
+                    </Button>
+                  </div>
+                  
+                  {/* Shows the address to everyone */}
+                  {assignment.address && (
+                    <span className="text-sm text-foreground ml-6">
+                      Address: {assignment.address}
+                    </span>
+                  )}
+
+                  {/* Keeps the specific branch name hidden unless authorized */}
                   {canViewClientName && (
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-sm text-muted-foreground ml-6">
                       Branch: {displaySubtitle}
                     </span>
                   )}
@@ -494,7 +520,12 @@ export default function AssignmentDetail() {
                           className="w-full justify-start" 
                           variant="outline" 
                           disabled={!isActive} // Disable Nav if inactive
-                          onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(assignment.city + ', ' + assignment.state)}`)}
+                          onClick={() => {
+                            const query = assignment.address 
+                              ? `${assignment.address}, ${assignment.city}, ${assignment.state} ${assignment.pincode || ''}, India`
+                              : `${assignment.city}, ${assignment.state}, India`;
+                            window.open(`https://maps.google.com/?q=${encodeURIComponent(query)}`);
+                          }}
                         >
                           <Navigation className="h-4 w-4 mr-2" /> Navigate to Location
                        </Button>

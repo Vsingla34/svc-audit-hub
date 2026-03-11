@@ -91,17 +91,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Load session safely on mount
     initializeAuth();
 
-    // Listen for auth changes cleanly (ignores the redundant INITIAL_SESSION event)
+    // Listen for auth changes cleanly
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
       if (event === 'INITIAL_SESSION') return; 
 
-      if (event === 'SIGNED_IN') {
+      // FIX 1: Listen for TOKEN_REFRESHED so the sidebar items don't drop out
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         setLoading(true);
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         if (currentSession?.user) {
-          // Pass both ID and Email during a new login
           await fetchUserContext(currentSession.user.id, currentSession.user.email);
         }
         setLoading(false);
@@ -111,9 +111,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUserRole(null);
         setIsProfileComplete(false);
         setLoading(false);
-        navigate("/auth");
+        navigate("/auth", { replace: true });
       } else {
-        // Handles token refreshes seamlessly
+        // Fallback
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
       }
@@ -125,13 +125,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [navigate]);
 
+  // FIX 2: Bulletproof SignOut function
   const signOut = async () => {
     try {
         setLoading(true); 
-        await supabase.auth.signOut();
-        navigate("/auth");
+        
+        // Step 1: Instantly wipe React state so the UI reacts without waiting
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
+        setIsProfileComplete(false);
+
+        // Step 2: Manually kill localStorage keys so session is dead even if offline
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-')) {
+            localStorage.removeItem(key);
+          }
+        });
+
+        // Step 3: Tell server to sign out, but force a 3-second timeout so it NEVER hangs
+        await Promise.race([
+            supabase.auth.signOut(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+        ]);
+    } catch (error) {
+        console.warn("Server logout bypassed due to timeout or network block.");
     } finally {
         setLoading(false);
+        navigate("/auth", { replace: true });
+        // Optional: Force a hard reload to completely scrub browser memory
+        window.location.reload();
     }
   };
 

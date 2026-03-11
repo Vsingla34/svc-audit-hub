@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Filter } from 'lucide-react';
+import { Filter, Loader2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import L from 'leaflet';
 
@@ -42,6 +42,7 @@ const AssignmentsMap = () => {
   const [selectedState, setSelectedState] = useState<string>('all');
   const [selectedCity, setSelectedCity] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [isMapLoading, setIsMapLoading] = useState(false);
 
   useEffect(() => {
     fetchAssignments();
@@ -52,15 +53,52 @@ const AssignmentsMap = () => {
   }, [assignments, selectedState, selectedCity, selectedStatus]);
 
   const fetchAssignments = async () => {
-    const { data } = await supabase
-      .from('assignments')
-      .select('*')
-      .not('latitude', 'is', null)
-      .not('longitude', 'is', null);
+    setIsMapLoading(true);
+    
+    // Fetch ALL assignments, ignoring exact database coordinates
+    const { data } = await supabase.from('assignments').select('*');
 
     if (data) {
-      setAssignments(data);
+      const uniqueLocations = Array.from(new Set(data.map(a => `${a.city}, ${a.state}`)));
+      const coordsMap: Record<string, { lat: number; lng: number }> = {};
+
+      // Geocode each unique City/State combination directly
+      for (const location of uniqueLocations) {
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location + ', India')}&limit=1`);
+          const geoData = await res.json();
+          if (geoData && geoData.length > 0) {
+            coordsMap[location] = {
+              lat: parseFloat(geoData[0].lat),
+              lng: parseFloat(geoData[0].lon)
+            };
+          }
+          // Tiny 200ms delay to respect OpenStreetMap API limits
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.error("Geocoding failed for:", location);
+        }
+      }
+
+      // Apply city center coords to assignments
+      const processedData = data.map(assignment => {
+        const loc = `${assignment.city}, ${assignment.state}`;
+        const coords = coordsMap[loc];
+        
+        // Add a tiny random offset (approx 500 meters) so pins in the same city don't perfectly overlap
+        const offsetLat = (Math.random() - 0.5) * 0.01;
+        const offsetLng = (Math.random() - 0.5) * 0.01;
+
+        return {
+          ...assignment,
+          displayLat: (coords?.lat || assignment.latitude) + offsetLat,
+          displayLng: (coords?.lng || assignment.longitude) + offsetLng,
+        };
+      }).filter(a => a.displayLat && a.displayLng);
+
+      setAssignments(processedData);
     }
+    setIsMapLoading(false);
   };
 
   const filterAssignments = () => {
@@ -80,6 +118,7 @@ const AssignmentsMap = () => {
           <CardTitle className="flex items-center gap-2 text-base">
             <Filter className="h-4 w-4" />
             Filter Assignments
+            {isMapLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-2" />}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -134,14 +173,14 @@ const AssignmentsMap = () => {
               {filteredAssignments.map((assignment) => (
                 <Marker 
                   key={assignment.id} 
-                  position={[assignment.latitude, assignment.longitude]}
+                  position={[assignment.displayLat, assignment.displayLng]}
                 >
                   <Popup>
                     <div className="p-2 min-w-[200px]">
                       <h3 className="font-bold text-base mb-2">{assignment.client_name}</h3>
                       <div className="space-y-1 text-sm">
                         <p><span className="font-semibold">Branch:</span> {assignment.branch_name}</p>
-                        <p><span className="font-semibold">City:</span> {assignment.city}</p>
+                        <p><span className="font-semibold">Location:</span> {assignment.city}, {assignment.state}</p>
                         <p><span className="font-semibold">Fees:</span> ₹{assignment.fees?.toLocaleString('en-IN')}</p>
                         <div className={`inline-block px-2 py-0.5 rounded text-xs text-white capitalize mt-2
                           ${assignment.status === 'open' ? 'bg-blue-500' : 
