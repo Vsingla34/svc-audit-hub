@@ -508,7 +508,6 @@ export default function PaymentsDashboard() {
                 />
               </div>
             </div>
-
             <DialogFooter>
               <Button variant="outline" onClick={() => setPaymentDialog({ open: false, invoice: null })}>
                 Cancel

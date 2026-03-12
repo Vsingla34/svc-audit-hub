@@ -165,7 +165,8 @@ export function ReportsManagement() {
     };
 
     try {
-      const { error } = await supabase
+      // 1. Mark Assignment as Completed and Save the Individual Rating
+      const { error: updateError } = await supabase
         .from('assignments')
         .update({
           status: 'completed',
@@ -175,9 +176,38 @@ export function ReportsManagement() {
         })
         .eq('id', completeData.id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
-      toast.success("Audit completed and invoice generated successfully!");
+      // 2. Calculate the New Average Rating for this Auditor
+      if (assignment.allotted_to) {
+        const { data: ratedAssignments, error: fetchError } = await supabase
+          .from('assignments')
+          .select('auditor_rating')
+          .eq('allotted_to', assignment.allotted_to)
+          .not('auditor_rating', 'is', null);
+
+        if (!fetchError && ratedAssignments && ratedAssignments.length > 0) {
+          const totalScore = ratedAssignments.reduce((sum, curr) => sum + Number(curr.auditor_rating), 0);
+          const averageScore = Number((totalScore / ratedAssignments.length).toFixed(1));
+
+          // 3. Save the Average Rating to the User's Profile table
+          const { error: profileError } = await supabase
+            .from('auditor_profiles')
+            .update({ rating: averageScore })
+            .eq('user_id', assignment.allotted_to);
+            
+          // Smart Fallback: If 'rating' column was created on the main 'profiles' table instead
+          if (profileError) {
+             console.warn("Saving to auditor_profiles failed, attempting to save to profiles table...", profileError);
+             await supabase
+                .from('profiles')
+                .update({ rating: averageScore })
+                .eq('id', assignment.allotted_to);
+          }
+        }
+      }
+
+      toast.success("Audit completed! Rating and invoice processed successfully.");
       setActiveAudits(prev => prev.filter(a => a.id !== completeData.id));
       setCompleteDialog(false);
       

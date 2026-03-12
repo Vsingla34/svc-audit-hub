@@ -5,7 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { DashboardLayout } from "@/components/DashboardLayout"; // Added Import
+import { DashboardLayout } from "@/components/DashboardLayout";
 
 // 1. Eagerly loaded components
 import Auth from "./pages/Auth";
@@ -38,43 +38,78 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, 
-      gcTime: 1000 * 60 * 30, 
-      refetchOnWindowFocus: false, 
-      retry: 1, 
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 30,
+      refetchOnWindowFocus: false,
+      retry: 1,
     },
   },
 });
 
-const GlobalLoader = () => null;
+// A real loading screen — shown while auth initializes on first paint.
+// Kept minimal and instant so it never feels like a hang.
+const GlobalLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-white">
+    <div className="flex flex-col items-center gap-3">
+      <div className="h-8 w-8 rounded-full border-4 border-[#4338CA] border-t-transparent animate-spin" />
+      <p className="text-sm text-muted-foreground">Loading...</p>
+    </div>
+  </div>
+);
 
-const ProtectedRoute = ({ children, requiredRole }: { children: React.ReactNode, requiredRole?: 'admin' | 'auditor' | 'client' }) => {
+
+const ProtectedRoute = ({
+  children,
+  requiredRole,
+}: {
+  children: React.ReactNode;
+  requiredRole?: "admin" | "auditor" | "client";
+}) => {
   const { user, loading, userRole, isProfileComplete } = useAuth();
   const location = useLocation();
 
-  if (loading) return <GlobalLoader />;
+  // Still initializing — render nothing, the shell's loader is already showing
+  if (loading) return null;
+
+  // Not logged in — send to auth, remembering where they wanted to go
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
 
-  const currentRole = (userRole || 'auditor').toLowerCase();
+  const currentRole = (userRole || "auditor").toLowerCase();
 
   if (requiredRole) {
     const reqRole = requiredRole.toLowerCase();
-    const isAdminPath = reqRole === 'admin';
-    const isUserAdmin = currentRole === 'admin' || currentRole === 'super_admin';
-    
+    const isAdminPath = reqRole === "admin";
+    const isUserAdmin = currentRole === "admin" || currentRole === "super_admin";
+
     if (isAdminPath && !isUserAdmin) return <Navigate to="/dashboard" replace />;
-    if (!isAdminPath && !isUserAdmin && currentRole !== reqRole) return <Navigate to="/dashboard" replace />;
+    if (!isAdminPath && !isUserAdmin && currentRole !== reqRole)
+      return <Navigate to="/dashboard" replace />;
   }
 
-  if (currentRole === 'auditor' && !isProfileComplete && location.pathname !== '/profile-setup') {
+  // Auditor with incomplete profile — force setup first
+  if (
+    currentRole === "auditor" &&
+    !isProfileComplete &&
+    location.pathname !== "/profile-setup"
+  ) {
     return <Navigate to="/profile-setup" replace />;
   }
 
   return <>{children}</>;
 };
 
-// THE MASTER SHELL WRAPPER
+
 const ProtectedShell = () => {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+ 
+  if (loading) return <GlobalLoader />;
+
+  // Auth resolved but no user — redirect to login
+  if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
+
+  // Auth resolved and user exists — render the full dashboard shell
   return (
     <DashboardLayout title="" navItems={[]} activeTab="">
       <Outlet />
@@ -95,9 +130,16 @@ function App() {
                 <Route path="/" element={<Navigate to="/auth" replace />} />
                 <Route path="/auth" element={<Auth />} />
 
-                {/* WRAP ALL DASHBOARD ROUTES IN THE MASTER SHELL */}
+                
                 <Route element={<ProtectedShell />}>
-                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route
+                    path="/dashboard"
+                    element={
+                      <ProtectedRoute>
+                        <Dashboard />
+                      </ProtectedRoute>
+                    }
+                  />
 
                   <Route path="/admin/overview" element={<ProtectedRoute requiredRole="admin"><AdminOverviewPage /></ProtectedRoute>} />
                   <Route path="/admin/assignments" element={<ProtectedRoute requiredRole="admin"><AdminAssignmentsPage /></ProtectedRoute>} />
@@ -119,7 +161,7 @@ function App() {
                   <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
                   <Route path="/assignment/:id" element={<ProtectedRoute><AssignmentDetail /></ProtectedRoute>} />
                 </Route>
-                
+
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>

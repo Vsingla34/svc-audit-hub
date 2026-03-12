@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, useRef } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
@@ -31,25 +31,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isProfileComplete, setIsProfileComplete] = useState(false);
   const navigate = useNavigate();
 
+  // Prevents duplicate DB fetches when multiple auth events fire rapidly
+  const isFetchingContext = useRef(false);
+  // Tracks whether we've completed the very first session check
+  const isInitialized = useRef(false);
+
   const fetchUserContext = async (userId: string, userEmail?: string) => {
-    
-    // --- THE SUPER ADMIN BYPASS ---
-    // This guarantees the owner account NEVER gets locked out of the admin panel,
-    // even if Supabase Row Level Security (RLS) accidentally blocks database reads.
+    if (isFetchingContext.current) return;
+    isFetchingContext.current = true;
+
+    // --- SUPER ADMIN BYPASS ---
+    // Guarantees the owner account is NEVER locked out, even if RLS blocks DB reads.
     if (userEmail === 'info.stockcheck360@gmail.com') {
       setUserRole('admin');
       setIsProfileComplete(true);
-      return; 
+      isFetchingContext.current = false;
+      return;
     }
 
     try {
       const [profileRoleRes, userRoleRes, auditorProfileRes] = await Promise.all([
         supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
         supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
-        supabase.from("auditor_profiles").select("id").eq("user_id", userId).maybeSingle()
+        supabase.from("auditor_profiles").select("id").eq("user_id", userId).maybeSingle(),
       ]);
 
-      let finalRole = 'auditor'; // Default fallback
+      let finalRole = 'auditor';
       const pRole = profileRoleRes.data?.role?.toLowerCase().trim();
       const uRole = userRoleRes.data?.role?.toLowerCase().trim();
 
@@ -62,99 +69,136 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setIsProfileComplete(!!auditorProfileRes.data);
     } catch (e: any) {
       console.error("Context fetch failed:", e.message);
-      if (!userRole) setUserRole('auditor');
+      setUserRole('auditor');
+    } finally {
+      isFetchingContext.current = false;
     }
   };
 
   useEffect(() => {
     let mounted = true;
 
-    const initializeAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!mounted) return;
-
-        setSession(session);
-        setUser(session?.user ?? null);
-
-        if (session?.user) {
-          // Pass both ID and Email to the context fetcher
-          await fetchUserContext(session.user.id, session.user.email);
-        }
-      } catch (e) {
-        console.error("Auth init error:", e);
-      } finally {
-        if (mounted) setLoading(false);
+    
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const { data: { session: latestSession } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (!latestSession) {
+        setUser(null);
+        setSession(null);
+        setUserRole(null);
+        setIsProfileComplete(false);
+        navigate('/auth', { replace: true });
+      } else {
+        // Session alive — sync in case token was silently refreshed while hidden
+        setSession(latestSession);
+        setUser(latestSession.user);
       }
     };
 
-    // Load session safely on mount
-    initializeAuth();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Listen for auth changes cleanly
+    
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
-      if (event === 'INITIAL_SESSION') return; 
 
-      // FIX 1: Listen for TOKEN_REFRESHED so the sidebar items don't drop out
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+      if (event === 'INITIAL_SESSION') {
+        
+        if (currentSession) {
+          const expiresAt = (currentSession.expires_at ?? 0) * 1000;
+          const isExpired = expiresAt < Date.now();
+
+          if (isExpired) {
+           
+            console.warn("Session expired on init. Clearing.");
+            Object.keys(localStorage).forEach((k) => {
+              if (k.startsWith('sb-')) localStorage.removeItem(k);
+            });
+            setSession(null);
+            setUser(null);
+          } else {
+            setSession(currentSession);
+            setUser(currentSession.user);
+            await fetchUserContext(currentSession.user.id, currentSession.user.email);
+          }
+        } else {
+          setSession(null);
+          setUser(null);
+        }
+
+        isInitialized.current = true;
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      
+      if (!isInitialized.current) return;
+
+      if (event === 'SIGNED_IN') {
+       
         setLoading(true);
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         if (currentSession?.user) {
           await fetchUserContext(currentSession.user.id, currentSession.user.email);
         }
-        setLoading(false);
+        if (mounted) setLoading(false);
+
+      } else if (event === 'TOKEN_REFRESHED') {
+       
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+
+      } else if (event === 'USER_UPDATED') {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
+        if (currentSession?.user) {
+         
+          isFetchingContext.current = false;
+          await fetchUserContext(currentSession.user.id, currentSession.user.email);
+        }
+
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
         setUser(null);
         setUserRole(null);
         setIsProfileComplete(false);
         setLoading(false);
-        navigate("/auth", { replace: true });
-      } else {
-        // Fallback
-        setSession(currentSession);
-        setUser(currentSession?.user ?? null);
+        if (mounted) navigate("/auth", { replace: true });
       }
     });
 
     return () => {
       mounted = false;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       sub.subscription.unsubscribe();
     };
   }, [navigate]);
 
-  // FIX 2: Bulletproof SignOut function
   const signOut = async () => {
     try {
-        setLoading(true); 
-        
-        // Step 1: Instantly wipe React state so the UI reacts without waiting
-        setUser(null);
-        setSession(null);
-        setUserRole(null);
-        setIsProfileComplete(false);
+     
+      setUser(null);
+      setSession(null);
+      setUserRole(null);
+      setIsProfileComplete(false);
 
-        // Step 2: Manually kill localStorage keys so session is dead even if offline
-        Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sb-')) {
-            localStorage.removeItem(key);
-          }
-        });
+     
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('sb-')) localStorage.removeItem(key);
+      });
 
-        // Step 3: Tell server to sign out, but force a 3-second timeout so it NEVER hangs
-        await Promise.race([
-            supabase.auth.signOut(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
-        ]);
+      
+      await Promise.race([
+        supabase.auth.signOut({ scope: 'local' }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("signOut timed out")), 3000)
+        ),
+      ]);
     } catch (error) {
-        console.warn("Server logout bypassed due to timeout or network block.");
+      console.warn("Server logout bypassed:", error);
     } finally {
-        setLoading(false);
-        navigate("/auth", { replace: true });
-        // Optional: Force a hard reload to completely scrub browser memory
-        window.location.reload();
+      navigate("/auth", { replace: true });
     }
   };
 
