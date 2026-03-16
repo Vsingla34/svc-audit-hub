@@ -120,17 +120,21 @@ export default function AuditorProfileSetup() {
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}/${type}_${Date.now()}.${fileExt}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('kyc-documents')
-      .upload(fileName, file, { upsert: true });
+    try {
+      // Force an 8-second timeout so the UI never freezes on document uploads
+      const uploadPromise = supabase.storage.from('kyc-documents').upload(fileName, file, { upsert: true });
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Upload timed out')), 8000));
+      
+      const { error: uploadError } = await Promise.race([uploadPromise, timeoutPromise]);
 
-    setUploading({ ...uploading, [key]: false });
-
-    if (uploadError) {
-      toast({ title: 'Upload failed', description: uploadError.message, variant: 'destructive' });
+      if (uploadError) throw uploadError;
+      return fileName;
+    } catch (error: any) {
+      toast({ title: 'Upload failed', description: error.message || 'Network timeout', variant: 'destructive' });
       return null;
+    } finally {
+      setUploading({ ...uploading, [key]: false });
     }
-    return fileName;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'gst' | 'resume' | 'profilePhoto') => {
@@ -146,7 +150,6 @@ export default function AuditorProfileSetup() {
     }
   };
 
-  // NEW: Securely preview an uploaded document
   const handleViewDocument = async (path: string) => {
     if (!path) return;
     try {
@@ -159,7 +162,7 @@ export default function AuditorProfileSetup() {
       
       const { data, error } = await supabase.storage
         .from('kyc-documents')
-        .createSignedUrl(path, 3600); // 1-hour expiration
+        .createSignedUrl(path, 3600);
         
       if (error) throw error;
       if (data?.signedUrl) {

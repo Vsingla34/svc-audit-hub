@@ -104,7 +104,7 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      const { error: verifyError } = await supabase.auth.verifyOtp({
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
         email: email.trim(),
         token: otp.trim(),
         type: 'signup',
@@ -113,6 +113,11 @@ export default function Auth() {
       if (verifyError) throw verifyError;
 
       toast.success('Account verified and created successfully!');
+      
+      // Explicitly navigate as soon as the token is verified
+      if (data?.session) {
+        navigate('/dashboard');
+      }
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Invalid OTP or Verification Failed");

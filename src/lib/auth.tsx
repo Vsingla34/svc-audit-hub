@@ -50,15 +50,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      const [profileRoleRes, userRoleRes, auditorProfileRes] = await Promise.all([
+      // FIX 1: Re-added the Promise.race timeout so the UI never freezes!
+      const fetchPromise = Promise.all([
         supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
         supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
         supabase.from("auditor_profiles").select("id").eq("user_id", userId).maybeSingle(),
       ]);
 
+      const [profileRoleRes, userRoleRes, auditorProfileRes] = await Promise.race([
+        fetchPromise,
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Context timeout")), 5000))
+      ]);
+
       let finalRole = 'auditor';
-      const pRole = profileRoleRes.data?.role?.toLowerCase().trim();
-      const uRole = userRoleRes.data?.role?.toLowerCase().trim();
+      const pRole = profileRoleRes?.data?.role?.toLowerCase().trim();
+      const uRole = userRoleRes?.data?.role?.toLowerCase().trim();
 
       if (uRole === 'admin' || uRole === 'super_admin') finalRole = uRole;
       else if (pRole === 'admin' || pRole === 'super_admin') finalRole = pRole;
@@ -66,7 +72,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       else if (uRole) finalRole = uRole;
 
       setUserRole(finalRole);
-      setIsProfileComplete(!!auditorProfileRes.data);
+      setIsProfileComplete(!!auditorProfileRes?.data);
     } catch (e: any) {
       console.error("Context fetch failed:", e.message);
       setUserRole('auditor');
@@ -78,11 +84,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     let mounted = true;
 
-    
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
       const { data: { session: latestSession } } = await supabase.auth.getSession();
       if (!mounted) return;
+      
       if (!latestSession) {
         setUser(null);
         setSession(null);
@@ -98,18 +104,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
 
       if (event === 'INITIAL_SESSION') {
-        
         if (currentSession) {
           const expiresAt = (currentSession.expires_at ?? 0) * 1000;
           const isExpired = expiresAt < Date.now();
 
           if (isExpired) {
-           
             console.warn("Session expired on init. Clearing.");
             Object.keys(localStorage).forEach((k) => {
               if (k.startsWith('sb-')) localStorage.removeItem(k);
@@ -131,11 +134,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
-      
       if (!isInitialized.current) return;
 
       if (event === 'SIGNED_IN') {
-       
         setLoading(true);
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
@@ -145,7 +146,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (mounted) setLoading(false);
 
       } else if (event === 'TOKEN_REFRESHED') {
-       
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
@@ -153,7 +153,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         if (currentSession?.user) {
-         
           isFetchingContext.current = false;
           await fetchUserContext(currentSession.user.id, currentSession.user.email);
         }
@@ -177,18 +176,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     try {
-     
+      // Step 1: Instantly wipe React state so UI reacts immediately
       setUser(null);
       setSession(null);
       setUserRole(null);
       setIsProfileComplete(false);
 
-     
-      Object.keys(localStorage).forEach((key) => {
-        if (key.startsWith('sb-')) localStorage.removeItem(key);
-      });
-
-      
+      // FIX 2: Let Supabase sign out FIRST, before killing localStorage!
       await Promise.race([
         supabase.auth.signOut({ scope: 'local' }),
         new Promise<never>((_, reject) =>
@@ -198,6 +192,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.warn("Server logout bypassed:", error);
     } finally {
+      // Step 3: NOW take the nuclear option and wipe localStorage manually
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('sb-')) localStorage.removeItem(key);
+      });
       navigate("/auth", { replace: true });
     }
   };
