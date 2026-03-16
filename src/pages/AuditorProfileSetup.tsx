@@ -43,6 +43,10 @@ export default function AuditorProfileSetup() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  // FIX 1: Lock local storage until initial load finishes so it doesn't wipe itself
+  const [isLoaded, setIsLoaded] = useState(false);
+  
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ gst: false, resume: false, profilePhoto: false });
@@ -60,12 +64,12 @@ export default function AuditorProfileSetup() {
 
   const [qualificationInput, setQualificationInput] = useState('');
 
-  // MOBILE FIX: Auto-save form data to local storage on every change
+  // Auto-save ONLY if we have fully loaded the data first
   useEffect(() => {
-    if (user?.id && formData.base_state !== undefined) {
+    if (user?.id && isLoaded) {
       localStorage.setItem(`auditor_draft_${user.id}`, JSON.stringify(formData));
     }
-  }, [formData, user?.id]);
+  }, [formData, user?.id, isLoaded]);
 
   useEffect(() => {
     if (user?.id) loadProfile();
@@ -74,8 +78,7 @@ export default function AuditorProfileSetup() {
   const loadProfile = async () => {
     if (!user?.id) return;
     
-    // Check for locally cached data in case the mobile browser refreshed the page
-    let localData = null;
+    let localData: any = null;
     const cached = localStorage.getItem(`auditor_draft_${user.id}`);
     if (cached) {
       try { localData = JSON.parse(cached); } catch(e) {}
@@ -86,37 +89,42 @@ export default function AuditorProfileSetup() {
     if (data) {
       setProfileStatus(data.profile_status || 'unverified');
       setRejectionReason(data.rejection_reason);
-      
-      // Merge DB data with local typing data. Local data wins because it represents unsaved typing.
-      setFormData({
-        profile_photo_url: localData?.profile_photo_url || data.profile_photo_url || '',
-        qualifications: localData?.qualifications?.length ? localData.qualifications : data.qualifications || [],
-        gst_number: localData?.gst_number || data.gst_number || '',
-        resume_url: localData?.resume_url || data.resume_url || '',
-        experience_years: localData?.experience_years !== undefined ? localData.experience_years : data.experience_years || 0,
-        address: localData?.address || data.address || '',
-        base_city: localData?.base_city || data.base_city || '',
-        base_state: localData?.base_state || data.base_state || '',
-        preferred_states: localData?.preferred_states?.length ? localData.preferred_states : data.preferred_states || [],
-        preferred_cities: localData?.preferred_cities?.length ? localData.preferred_cities : data.preferred_cities || [],
-        willing_to_travel_radius: localData?.willing_to_travel_radius !== undefined ? localData.willing_to_travel_radius : data.willing_to_travel_radius || 50,
-        has_manpower: localData?.has_manpower !== undefined ? localData.has_manpower : data.has_manpower || false,
-        manpower_count: localData?.manpower_count !== undefined ? localData.manpower_count : data.manpower_count || 0,
-        competencies: localData?.competencies?.length ? localData.competencies : data.competencies || [],
-        core_competency: localData?.core_competency || data.core_competency || '',
-        has_smartphone: localData?.has_smartphone !== undefined ? localData.has_smartphone : data.has_smartphone || false,
-        has_laptop: localData?.has_laptop !== undefined ? localData.has_laptop : data.has_laptop || false,
-        has_bike: localData?.has_bike !== undefined ? localData.has_bike : data.has_bike || false
-      });
-    } else if (localData) {
-      setFormData(localData);
     }
+    
+    const dbData = data || {};
+
+    // FIX 2: Functional updater to survive the race condition! 
+    // If handleFileUpload finishes BEFORE this DB fetch, 'prev' preserves the newly uploaded file!
+    setFormData(prev => ({
+      profile_photo_url: prev.profile_photo_url || localData?.profile_photo_url || dbData.profile_photo_url || '',
+      qualifications: prev.qualifications.length ? prev.qualifications : (localData?.qualifications?.length ? localData.qualifications : dbData.qualifications || []),
+      gst_number: prev.gst_number || localData?.gst_number || dbData.gst_number || '',
+      resume_url: prev.resume_url || localData?.resume_url || dbData.resume_url || '',
+      experience_years: prev.experience_years ? prev.experience_years : (localData?.experience_years !== undefined ? localData.experience_years : dbData.experience_years || 0),
+      address: prev.address || localData?.address || dbData.address || '',
+      base_city: prev.base_city || localData?.base_city || dbData.base_city || '',
+      base_state: prev.base_state || localData?.base_state || dbData.base_state || '',
+      preferred_states: prev.preferred_states.length ? prev.preferred_states : (localData?.preferred_states?.length ? localData.preferred_states : dbData.preferred_states || []),
+      preferred_cities: prev.preferred_cities.length ? prev.preferred_cities : (localData?.preferred_cities?.length ? localData.preferred_cities : dbData.preferred_cities || []),
+      willing_to_travel_radius: prev.willing_to_travel_radius !== 50 ? prev.willing_to_travel_radius : (localData?.willing_to_travel_radius !== undefined ? localData.willing_to_travel_radius : dbData.willing_to_travel_radius || 50),
+      has_manpower: prev.has_manpower || localData?.has_manpower !== undefined ? localData.has_manpower : dbData.has_manpower || false,
+      manpower_count: prev.manpower_count ? prev.manpower_count : (localData?.manpower_count !== undefined ? localData.manpower_count : dbData.manpower_count || 0),
+      competencies: prev.competencies.length ? prev.competencies : (localData?.competencies?.length ? localData.competencies : dbData.competencies || []),
+      core_competency: prev.core_competency || localData?.core_competency || dbData.core_competency || '',
+      has_smartphone: prev.has_smartphone || localData?.has_smartphone !== undefined ? localData.has_smartphone : dbData.has_smartphone || false,
+      has_laptop: prev.has_laptop || localData?.has_laptop !== undefined ? localData.has_laptop : dbData.has_laptop || false,
+      has_bike: prev.has_bike || localData?.has_bike !== undefined ? localData.has_bike : dbData.has_bike || false
+    }));
+
+    setIsLoaded(true); // Unlock local storage saving
   };
 
   const uploadFile = async (file: File, type: string) => {
     if (!user) return null;
     const key = type as keyof typeof uploading;
-    setUploading({ ...uploading, [key]: true });
+    
+    // Use functional updater so states don't collide
+    setUploading(prev => ({ ...prev, [key]: true }));
     
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}/${type}_${Date.now()}.${fileExt}`;
@@ -133,7 +141,7 @@ export default function AuditorProfileSetup() {
       toast({ title: 'Upload failed', description: error.message || 'Network timeout', variant: 'destructive' });
       return null;
     } finally {
-      setUploading({ ...uploading, [key]: false });
+      setUploading(prev => ({ ...prev, [key]: false }));
     }
   };
 
@@ -141,19 +149,23 @@ export default function AuditorProfileSetup() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // MOBILE FIX: Prevent massive PDFs from crashing the browser's memory
-    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+    if (file.size > 5 * 1024 * 1024) { 
       toast({ title: 'File too large', description: 'Please upload a file smaller than 5MB.', variant: 'destructive' });
-      e.target.value = ''; // Reset input
+      e.target.value = ''; 
       return;
     }
 
     const path = await uploadFile(file, type);
     if (path) {
-      if (type === 'resume') setFormData({ ...formData, resume_url: path });
-      else if (type === 'profilePhoto') setFormData({ ...formData, profile_photo_url: path });
+      // FIX 3: Use functional updater to prevent stale state wiping out the rest of the form!
+      setFormData(prev => ({
+        ...prev,
+        [type === 'resume' ? 'resume_url' : type === 'profilePhoto' ? 'profile_photo_url' : 'gst_number']: path
+      }));
       toast({ title: 'File uploaded', description: 'Document uploaded successfully' });
     }
+    
+    e.target.value = ''; // FIX 4: Clear the hidden input so you can re-upload if needed
   };
 
   const handleViewDocument = async (path: string) => {
@@ -171,38 +183,40 @@ export default function AuditorProfileSetup() {
 
   const addQualification = () => {
     if (qualificationInput.trim() && !formData.qualifications.includes(qualificationInput.trim())) {
-      setFormData({ ...formData, qualifications: [...formData.qualifications, qualificationInput.trim()] });
+      setFormData(prev => ({ ...prev, qualifications: [...prev.qualifications, qualificationInput.trim()] }));
       setQualificationInput('');
     }
   };
 
   const removeQualification = (qual: string) => {
-    setFormData({ ...formData, qualifications: formData.qualifications.filter(q => q !== qual) });
+    setFormData(prev => ({ ...prev, qualifications: prev.qualifications.filter(q => q !== qual) }));
   };
 
   const toggleState = (state: string) => {
-    setFormData({
-      ...formData,
-      preferred_states: formData.preferred_states.includes(state)
-        ? formData.preferred_states.filter(s => s !== state)
-        : [...formData.preferred_states, state],
-    });
+    setFormData(prev => ({
+      ...prev,
+      preferred_states: prev.preferred_states.includes(state)
+        ? prev.preferred_states.filter(s => s !== state)
+        : [...prev.preferred_states, state],
+    }));
   };
 
   const handleCompetencyToggle = (comp: string) => {
-    if (formData.competencies.includes(comp)) {
-      setFormData(prev => ({ 
-        ...prev, 
-        competencies: prev.competencies.filter(c => c !== comp),
-        core_competency: prev.core_competency === comp ? '' : prev.core_competency
-      }));
-    } else {
-      if (formData.competencies.length >= 5) {
-        toast({ title: 'Limit Reached', description: 'Maximum 5 competencies allowed.', variant: 'destructive' });
-        return;
+    setFormData(prev => {
+      if (prev.competencies.includes(comp)) {
+        return {
+          ...prev,
+          competencies: prev.competencies.filter(c => c !== comp),
+          core_competency: prev.core_competency === comp ? '' : prev.core_competency
+        };
+      } else {
+        if (prev.competencies.length >= 5) {
+          setTimeout(() => toast({ title: 'Limit Reached', description: 'Maximum 5 competencies allowed.', variant: 'destructive' }), 0);
+          return prev;
+        }
+        return { ...prev, competencies: [...prev.competencies, comp] };
       }
-      setFormData(prev => ({ ...prev, competencies: [...prev.competencies, comp] }));
-    }
+    });
   };
 
   const handleSaveDraft = async () => {
@@ -217,7 +231,7 @@ export default function AuditorProfileSetup() {
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
-      localStorage.removeItem(`auditor_draft_${user.id}`); // Clear cache on success
+      localStorage.removeItem(`auditor_draft_${user.id}`); 
       toast({ title: 'Draft saved', description: 'Your profile has been saved' });
       if (profileStatus === 'approved') { setProfileStatus('pending'); setIsEditing(false); }
     }
@@ -239,7 +253,7 @@ export default function AuditorProfileSetup() {
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
-      localStorage.removeItem(`auditor_draft_${user.id}`); // Clear cache on success
+      localStorage.removeItem(`auditor_draft_${user.id}`); 
       toast({ title: 'Profile submitted', description: 'Submitted for approval' });
       setProfileStatus('pending');
       setIsEditing(false);
@@ -324,14 +338,14 @@ export default function AuditorProfileSetup() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <Label>Experience (Years) *</Label>
-                    <Input type="text" inputMode="numeric" value={formData.experience_years} onChange={e => setFormData({...formData, experience_years: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0})} disabled={!isEditable} required />
+                    <Input type="text" inputMode="numeric" value={formData.experience_years} onChange={e => setFormData(prev => ({...prev, experience_years: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0}))} disabled={!isEditable} required />
                   </div>
                   <div>
                     <Label>GST Number</Label>
-                    <Input value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value.toUpperCase()})} disabled={!isEditable} />
+                    <Input value={formData.gst_number} onChange={e => setFormData(prev => ({...prev, gst_number: e.target.value.toUpperCase()}))} disabled={!isEditable} />
                   </div>
                   <div>
-                  <Label className="font-bold block mb-2">Resume (PDF &lt; 5MB) *</Label>
+                    <Label className="font-bold block mb-2">Resume (PDF &lt; 5MB) *</Label>
                     <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable || uploading.resume} className="mb-2" />
                     {uploading.resume && <span className="text-xs text-primary animate-pulse block mb-2">Uploading file, please wait...</span>}
                     {formData.resume_url && !uploading.resume ? (
@@ -355,15 +369,15 @@ export default function AuditorProfileSetup() {
                     <Label className="text-base mb-3 block">Assets Availability</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                        <div className="flex items-center space-x-2">
-                         <Checkbox id="smartphone" checked={formData.has_smartphone} onCheckedChange={(c) => isEditable && setFormData({...formData, has_smartphone: !!c})} disabled={!isEditable} />
+                         <Checkbox id="smartphone" checked={formData.has_smartphone} onCheckedChange={(c) => isEditable && setFormData(prev => ({...prev, has_smartphone: !!c}))} disabled={!isEditable} />
                          <label htmlFor="smartphone" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-1"><Smartphone className="h-4 w-4 text-muted-foreground"/> Smartphone</label>
                        </div>
                        <div className="flex items-center space-x-2">
-                         <Checkbox id="laptop" checked={formData.has_laptop} onCheckedChange={(c) => isEditable && setFormData({...formData, has_laptop: !!c})} disabled={!isEditable} />
+                         <Checkbox id="laptop" checked={formData.has_laptop} onCheckedChange={(c) => isEditable && setFormData(prev => ({...prev, has_laptop: !!c}))} disabled={!isEditable} />
                          <label htmlFor="laptop" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-1"><Laptop className="h-4 w-4 text-muted-foreground"/> Laptop</label>
                        </div>
                        <div className="flex items-center space-x-2">
-                         <Checkbox id="bike" checked={formData.has_bike} onCheckedChange={(c) => isEditable && setFormData({...formData, has_bike: !!c})} disabled={!isEditable} />
+                         <Checkbox id="bike" checked={formData.has_bike} onCheckedChange={(c) => isEditable && setFormData(prev => ({...prev, has_bike: !!c}))} disabled={!isEditable} />
                          <label htmlFor="bike" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 flex items-center gap-1"><Bike className="h-4 w-4 text-muted-foreground"/> Two-Wheeler (Bike)</label>
                        </div>
                     </div>
@@ -371,9 +385,9 @@ export default function AuditorProfileSetup() {
 
                  <div className="flex items-center gap-4 p-4 border rounded bg-muted/20 mt-2">
                     <Label>Manpower Availability?</Label>
-                    <Switch checked={formData.has_manpower} onCheckedChange={c => isEditable && setFormData({...formData, has_manpower: c})} disabled={!isEditable} />
+                    <Switch checked={formData.has_manpower} onCheckedChange={c => isEditable && setFormData(prev => ({...prev, has_manpower: c}))} disabled={!isEditable} />
                     {formData.has_manpower && (
-                      <Input type="number" min="1" className="w-24 ml-4" placeholder="Count" value={formData.manpower_count} onChange={e => setFormData({...formData, manpower_count: parseInt(e.target.value) || 0})} disabled={!isEditable} />
+                      <Input type="number" min="1" className="w-24 ml-4" placeholder="Count" value={formData.manpower_count} onChange={e => setFormData(prev => ({...prev, manpower_count: parseInt(e.target.value) || 0}))} disabled={!isEditable} />
                     )}
                  </div>
 
@@ -392,7 +406,7 @@ export default function AuditorProfileSetup() {
                  {formData.competencies.length > 0 && (
                    <div>
                      <Label>Core Competency *</Label>
-                     <Select value={formData.core_competency || ''} onValueChange={v => setFormData({...formData, core_competency: v})} disabled={!isEditable}>
+                     <Select value={formData.core_competency || ''} onValueChange={v => setFormData(prev => ({...prev, core_competency: v}))} disabled={!isEditable}>
                        <SelectTrigger><SelectValue placeholder="Select primary skill" /></SelectTrigger>
                        <SelectContent>{formData.competencies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                      </Select>
@@ -405,26 +419,26 @@ export default function AuditorProfileSetup() {
                 
                 <div className="space-y-2">
                   <Label>Full Address *</Label>
-                  <Input value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} placeholder="Full street address" disabled={!isEditable} required />
+                  <Input value={formData.address} onChange={e => setFormData(prev => ({...prev, address: e.target.value}))} placeholder="Full street address" disabled={!isEditable} required />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                      <Label>Base State *</Label>
-                     <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formData.base_state} onChange={e => setFormData({...formData, base_state: e.target.value})} disabled={!isEditable} required>
+                     <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={formData.base_state} onChange={e => setFormData(prev => ({...prev, base_state: e.target.value}))} disabled={!isEditable} required>
                        <option value="">Select State</option>
                        {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
                      </select>
                   </div>
                   <div>
                     <Label>Base City *</Label>
-                    <Input value={formData.base_city} onChange={e => setFormData({...formData, base_city: e.target.value})} disabled={!isEditable} required />
+                    <Input value={formData.base_city} onChange={e => setFormData(prev => ({...prev, base_city: e.target.value}))} disabled={!isEditable} required />
                   </div>
                 </div>
                 
                 <div>
                   <Label>Willing to Travel (km radius) *</Label>
-                  <Input type="text" inputMode="numeric" className="max-w-xs" value={formData.willing_to_travel_radius} onChange={e => setFormData({...formData, willing_to_travel_radius: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0})} disabled={!isEditable} required />
+                  <Input type="text" inputMode="numeric" className="max-w-xs" value={formData.willing_to_travel_radius} onChange={e => setFormData(prev => ({...prev, willing_to_travel_radius: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0}))} disabled={!isEditable} required />
                 </div>
 
                 <div className="space-y-2">
