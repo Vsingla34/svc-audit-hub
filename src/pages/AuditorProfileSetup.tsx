@@ -331,7 +331,7 @@ export default function AuditorProfileSetup() {
                     <Input value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value.toUpperCase()})} disabled={!isEditable} />
                   </div>
                   <div>
-                    <Label className="font-bold block mb-2">Resume (PDF < 5MB) *</Label>
+                  <Label className="font-bold block mb-2">Resume (PDF &lt; 5MB) *</Label>
                     <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable || uploading.resume} className="mb-2" />
                     {uploading.resume && <span className="text-xs text-primary animate-pulse block mb-2">Uploading file, please wait...</span>}
                     {formData.resume_url && !uploading.resume ? (
