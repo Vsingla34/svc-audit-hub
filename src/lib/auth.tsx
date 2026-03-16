@@ -28,6 +28,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const isFetchingContext = useRef(false);
   const isInitialized = useRef(false);
+  
+  // FIX: A reference outside of the closure to track the active session.
+  // This prevents the mobile file picker from tricking the app into unmounting!
+  const activeSessionRef = useRef<Session | null>(null);
 
   const fetchUserContext = async (userId: string, userEmail?: string) => {
     if (isFetchingContext.current) return;
@@ -87,10 +91,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         if (!sessionResult?.data?.session) {
           setUser(null); setSession(null); setUserRole(null); setIsProfileComplete(false);
+          activeSessionRef.current = null;
           navigate('/auth', { replace: true });
         } else {
           setSession(sessionResult.data.session);
           setUser(sessionResult.data.session.user);
+          activeSessionRef.current = sessionResult.data.session;
         }
       } catch (e) {}
     };
@@ -106,12 +112,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (isExpired) {
             Object.keys(localStorage).forEach((k) => { if (k.startsWith('sb-')) localStorage.removeItem(k); });
             setSession(null); setUser(null);
+            activeSessionRef.current = null;
           } else {
             setSession(currentSession); setUser(currentSession.user);
+            activeSessionRef.current = currentSession;
             await fetchUserContext(currentSession.user.id, currentSession.user.email);
           }
         } else {
           setSession(null); setUser(null);
+          activeSessionRef.current = null;
         }
         isInitialized.current = true;
         if (mounted) setLoading(false);
@@ -121,13 +130,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!isInitialized.current) return;
 
       if (event === 'SIGNED_IN') {
-        // MOBILE FIX: If user already exists, this is just a background reconnect. DO NOT show a loading spinner!
-        // Showing a spinner unmounts the form and deletes all unsaved typed data.
-        const isBackgroundReconnect = !!user;
+        // THE PERMANENT FIX:
+        // By checking the ref instead of the state, we know exactly if the user was 
+        // already logged in before the phone went to sleep.
+        const isBackgroundReconnect = !!activeSessionRef.current;
+        
+        // Only show loading spinner if it's a BRAND NEW login
         if (!isBackgroundReconnect) setLoading(true);
         
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
+        activeSessionRef.current = currentSession;
+
         if (currentSession?.user) {
           await fetchUserContext(currentSession.user.id, currentSession.user.email);
         }
@@ -137,6 +151,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
+        activeSessionRef.current = currentSession;
+
         if (currentSession?.user && event === 'USER_UPDATED') {
           isFetchingContext.current = false;
           await fetchUserContext(currentSession.user.id, currentSession.user.email);
@@ -144,6 +160,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       } else if (event === 'SIGNED_OUT') {
         setSession(null); setUser(null); setUserRole(null); setIsProfileComplete(false);
+        activeSessionRef.current = null;
         setLoading(false);
         if (mounted) navigate("/auth", { replace: true });
       }
@@ -159,6 +176,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async () => {
     try {
       setUser(null); setSession(null); setUserRole(null); setIsProfileComplete(false);
+      activeSessionRef.current = null;
       await Promise.race([
         supabase.auth.signOut({ scope: 'local' }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("signOut timed out")), 3000)),
@@ -169,7 +187,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       navigate("/auth", { replace: true });
     }
   };
-
   return (
     <AuthContext.Provider value={{ user, session, loading, userRole, isProfileComplete, signOut }}>
       {children}
