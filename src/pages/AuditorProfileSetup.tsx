@@ -25,16 +25,17 @@ const INDIAN_STATES = [
 ];
 
 const COMPETENCIES_LIST = [
-  "Assets Verification", "Stock Audits",
-  "Accounting & Bookkeeping", "Financial Reporting & Finalization", "MIS Reporting & Dashboards",
-  "Accounts Payable (AP) Management", "Accounts Receivable (AR) Management", "Bank Reconciliation & Cash Management",
-  "Fixed Assets Accounting & FAR Management", "Inventory Accounting & Valuation", "Costing & Management Accounting",
-  "Budgeting, Forecasting & FP&A", "Virtual CFO / Finance Leadership", "Working Capital & Cashflow Optimization",
-  "Taxation – GST Compliance & Advisory", "Taxation – TDS/TCS Compliance & Advisory", "Direct Tax Compliance & Tax Audit Support",
-  "Bank Audits – Stock, Receivables & DP Assessment", "Concurrent Audit (Banking Operations)", "Statutory Audit Support & Audit Readiness",
-  "Internal Audit, IFC & Risk Management", "SOP Drafting, Process Mapping & Controls Design", "Compliance Management & Regulatory Reporting",
-  "Payroll Processing & Statutory Payroll Compliance (PF/ESI/PT)", "Treasury & Fund Management", "ERP/Accounting Software Implementation & Support",
-  "Data Analytics & Automation (Excel/VBA/Power Query/Power BI)", "Fraud Risk Assessment & Investigations Support", "Due Diligence & Transaction Advisory",
+  "Assets Verification", "Stock Audits", "Accounting & Bookkeeping", "Financial Reporting & Finalization", 
+  "MIS Reporting & Dashboards", "Accounts Payable (AP) Management", "Accounts Receivable (AR) Management", 
+  "Bank Reconciliation & Cash Management", "Fixed Assets Accounting & FAR Management", "Inventory Accounting & Valuation", 
+  "Costing & Management Accounting", "Budgeting, Forecasting & FP&A", "Virtual CFO / Finance Leadership", 
+  "Working Capital & Cashflow Optimization", "Taxation – GST Compliance & Advisory", "Taxation – TDS/TCS Compliance & Advisory", 
+  "Direct Tax Compliance & Tax Audit Support", "Bank Audits – Stock, Receivables & DP Assessment", 
+  "Concurrent Audit (Banking Operations)", "Statutory Audit Support & Audit Readiness", "Internal Audit, IFC & Risk Management", 
+  "SOP Drafting, Process Mapping & Controls Design", "Compliance Management & Regulatory Reporting", 
+  "Payroll Processing & Statutory Payroll Compliance (PF/ESI/PT)", "Treasury & Fund Management", 
+  "ERP/Accounting Software Implementation & Support", "Data Analytics & Automation (Excel/VBA/Power Query/Power BI)", 
+  "Fraud Risk Assessment & Investigations Support", "Due Diligence & Transaction Advisory", 
   "Business Process Improvement & Lean Finance", "Governance, Documentation & Policy Frameworks", "Client Relationship & Engagement Management"
 ];
 
@@ -51,67 +52,64 @@ export default function AuditorProfileSetup() {
   const [isEditing, setIsEditing] = useState(false);
   
   const [formData, setFormData] = useState({
-    profile_photo_url: '',
-    qualifications: [] as string[],
-    gst_number: '',
-    resume_url: '',
-    experience_years: 0,
-    address: '',
-    base_city: '',
-    base_state: '',
-    preferred_states: [] as string[],
-    preferred_cities: [] as string[], 
-    willing_to_travel_radius: 50,
-    has_manpower: false,
-    manpower_count: 0,
-    competencies: [] as string[],
-    core_competency: '',
-    has_smartphone: false, 
-    has_laptop: false,     
-    has_bike: false        
+    profile_photo_url: '', qualifications: [] as string[], gst_number: '', resume_url: '',
+    experience_years: 0, address: '', base_city: '', base_state: '', preferred_states: [] as string[],
+    preferred_cities: [] as string[], willing_to_travel_radius: 50, has_manpower: false, manpower_count: 0,
+    competencies: [] as string[], core_competency: '', has_smartphone: false, has_laptop: false, has_bike: false        
   });
 
   const [qualificationInput, setQualificationInput] = useState('');
 
-  // FIX 1: Only run loadProfile if the user's ID string changes, NOT on every visibility update
+  // MOBILE FIX: Auto-save form data to local storage on every change
   useEffect(() => {
-    if (user?.id) {
-      loadProfile();
+    if (user?.id && formData.base_state !== undefined) {
+      localStorage.setItem(`auditor_draft_${user.id}`, JSON.stringify(formData));
     }
+  }, [formData, user?.id]);
+
+  useEffect(() => {
+    if (user?.id) loadProfile();
   }, [user?.id]); 
 
   const loadProfile = async () => {
     if (!user?.id) return;
     
-    const { data } = await supabase
-      .from('auditor_profiles')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    // Check for locally cached data in case the mobile browser refreshed the page
+    let localData = null;
+    const cached = localStorage.getItem(`auditor_draft_${user.id}`);
+    if (cached) {
+      try { localData = JSON.parse(cached); } catch(e) {}
+    }
+
+    const { data } = await supabase.from('auditor_profiles').select('*').eq('user_id', user.id).maybeSingle();
 
     if (data) {
       setProfileStatus(data.profile_status || 'unverified');
       setRejectionReason(data.rejection_reason);
+      
+      // Merge DB data with local typing data. Local data wins because it represents unsaved typing.
       setFormData({
-        profile_photo_url: data.profile_photo_url || '',
-        qualifications: data.qualifications || [],
-        gst_number: data.gst_number || '',
-        resume_url: data.resume_url || '',
-        experience_years: data.experience_years || 0,
-        address: data.address || '',
-        base_city: data.base_city || '',
-        base_state: data.base_state || '',
-        preferred_states: data.preferred_states || [],
-        preferred_cities: data.preferred_cities || [],
-        willing_to_travel_radius: data.willing_to_travel_radius || 50,
-        has_manpower: data.has_manpower || false,
-        manpower_count: data.manpower_count || 0,
-        competencies: data.competencies || [],
-        core_competency: data.core_competency || '',
-        has_smartphone: data.has_smartphone || false,
-        has_laptop: data.has_laptop || false,
-        has_bike: data.has_bike || false
+        profile_photo_url: localData?.profile_photo_url || data.profile_photo_url || '',
+        qualifications: localData?.qualifications?.length ? localData.qualifications : data.qualifications || [],
+        gst_number: localData?.gst_number || data.gst_number || '',
+        resume_url: localData?.resume_url || data.resume_url || '',
+        experience_years: localData?.experience_years !== undefined ? localData.experience_years : data.experience_years || 0,
+        address: localData?.address || data.address || '',
+        base_city: localData?.base_city || data.base_city || '',
+        base_state: localData?.base_state || data.base_state || '',
+        preferred_states: localData?.preferred_states?.length ? localData.preferred_states : data.preferred_states || [],
+        preferred_cities: localData?.preferred_cities?.length ? localData.preferred_cities : data.preferred_cities || [],
+        willing_to_travel_radius: localData?.willing_to_travel_radius !== undefined ? localData.willing_to_travel_radius : data.willing_to_travel_radius || 50,
+        has_manpower: localData?.has_manpower !== undefined ? localData.has_manpower : data.has_manpower || false,
+        manpower_count: localData?.manpower_count !== undefined ? localData.manpower_count : data.manpower_count || 0,
+        competencies: localData?.competencies?.length ? localData.competencies : data.competencies || [],
+        core_competency: localData?.core_competency || data.core_competency || '',
+        has_smartphone: localData?.has_smartphone !== undefined ? localData.has_smartphone : data.has_smartphone || false,
+        has_laptop: localData?.has_laptop !== undefined ? localData.has_laptop : data.has_laptop || false,
+        has_bike: localData?.has_bike !== undefined ? localData.has_bike : data.has_bike || false
       });
+    } else if (localData) {
+      setFormData(localData);
     }
   };
 
@@ -124,7 +122,6 @@ export default function AuditorProfileSetup() {
     const fileName = `${user.id}/${type}_${Date.now()}.${fileExt}`;
 
     try {
-      // FIX 2: Increased timeout to 30 seconds (30000ms) to allow mobile networks time to upload PDFs
       const uploadPromise = supabase.storage.from('kyc-documents').upload(fileName, file, { upsert: true });
       const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Upload timed out. Connection is too slow.')), 30000));
       
@@ -144,11 +141,17 @@ export default function AuditorProfileSetup() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // MOBILE FIX: Prevent massive PDFs from crashing the browser's memory
+    if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      toast({ title: 'File too large', description: 'Please upload a file smaller than 5MB.', variant: 'destructive' });
+      e.target.value = ''; // Reset input
+      return;
+    }
+
     const path = await uploadFile(file, type);
     if (path) {
       if (type === 'resume') setFormData({ ...formData, resume_url: path });
       else if (type === 'profilePhoto') setFormData({ ...formData, profile_photo_url: path });
-      
       toast({ title: 'File uploaded', description: 'Document uploaded successfully' });
     }
   };
@@ -156,21 +159,11 @@ export default function AuditorProfileSetup() {
   const handleViewDocument = async (path: string) => {
     if (!path) return;
     try {
-      if (path.startsWith('http')) {
-        window.open(path, '_blank');
-        return;
-      }
-      
+      if (path.startsWith('http')) { window.open(path, '_blank'); return; }
       toast({ title: 'Opening...', description: 'Generating secure document link...' });
-      
-      const { data, error } = await supabase.storage
-        .from('kyc-documents')
-        .createSignedUrl(path, 3600);
-        
+      const { data, error } = await supabase.storage.from('kyc-documents').createSignedUrl(path, 3600);
       if (error) throw error;
-      if (data?.signedUrl) {
-        window.open(data.signedUrl, '_blank');
-      }
+      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
     } catch (error: any) {
       toast({ title: 'Error', description: 'Failed to load document preview.', variant: 'destructive' });
     }
@@ -215,18 +208,16 @@ export default function AuditorProfileSetup() {
   const handleSaveDraft = async () => {
     if (!user) return;
     setSavingDraft(true);
-    
     const { error } = await supabase.from('auditor_profiles').upsert({
-      user_id: user.id,
-      ...formData,
+      user_id: user.id, ...formData,
       profile_status: profileStatus === 'approved' || profileStatus === 'pending' ? 'pending' : 'draft', 
     }, { onConflict: 'user_id' });
-    
     setSavingDraft(false);
     
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
+      localStorage.removeItem(`auditor_draft_${user.id}`); // Clear cache on success
       toast({ title: 'Draft saved', description: 'Your profile has been saved' });
       if (profileStatus === 'approved') { setProfileStatus('pending'); setIsEditing(false); }
     }
@@ -235,33 +226,20 @@ export default function AuditorProfileSetup() {
   const handleSubmitForApproval = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
-    if (!formData.resume_url) {
-      toast({ title: 'Resume Required', description: 'You must upload a resume before submitting.', variant: 'destructive' });
-      return;
-    }
-    if (!formData.base_city || !formData.base_state || !formData.address) {
-      toast({ title: 'Incomplete profile', description: 'Fill all required location fields (Address, City, State)', variant: 'destructive' });
-      return;
-    }
-    if (formData.competencies.length === 0 || !formData.core_competency) {
-      toast({ title: 'Incomplete competencies', description: 'Select at least 1 competency and a core competency.', variant: 'destructive' });
-      return;
-    }
+    if (!formData.resume_url) { toast({ title: 'Resume Required', description: 'You must upload a resume before submitting.', variant: 'destructive' }); return; }
+    if (!formData.base_city || !formData.base_state || !formData.address) { toast({ title: 'Incomplete profile', description: 'Fill all required location fields', variant: 'destructive' }); return; }
+    if (formData.competencies.length === 0 || !formData.core_competency) { toast({ title: 'Incomplete competencies', description: 'Select at least 1 competency and a core competency.', variant: 'destructive' }); return; }
 
     setLoading(true);
-    
     const { error } = await supabase.from('auditor_profiles').upsert({
-      user_id: user.id,
-      ...formData,
-      profile_status: 'pending',
+      user_id: user.id, ...formData, profile_status: 'pending',
     }, { onConflict: 'user_id' });
-    
     setLoading(false);
 
     if (error) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     } else {
+      localStorage.removeItem(`auditor_draft_${user.id}`); // Clear cache on success
       toast({ title: 'Profile submitted', description: 'Submitted for approval' });
       setProfileStatus('pending');
       setIsEditing(false);
@@ -312,7 +290,6 @@ export default function AuditorProfileSetup() {
 
             <form onSubmit={handleSubmitForApproval} className="space-y-8">
               
-              {/* Profile Photo */}
               <div className="space-y-4">
                  <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Profile Photo (Optional)</h3>
                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -329,7 +306,6 @@ export default function AuditorProfileSetup() {
                  </div>
               </div>
 
-              {/* Qualifications */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50"><GraduationCap className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Qualifications</h3></div>
                 <div className="flex gap-2">
@@ -343,7 +319,6 @@ export default function AuditorProfileSetup() {
                 </div>
               </div>
 
-              {/* Experience & Docs */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50"><Briefcase className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Professional Info</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -356,9 +331,9 @@ export default function AuditorProfileSetup() {
                     <Input value={formData.gst_number} onChange={e => setFormData({...formData, gst_number: e.target.value.toUpperCase()})} disabled={!isEditable} />
                   </div>
                   <div>
-                    <Label className="font-bold block mb-2">Resume (PDF) *</Label>
+                    <Label className="font-bold block mb-2">Resume (PDF < 5MB) *</Label>
                     <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable || uploading.resume} className="mb-2" />
-                    {uploading.resume && <span className="text-xs text-primary animate-pulse block mb-2">Uploading large file, please wait...</span>}
+                    {uploading.resume && <span className="text-xs text-primary animate-pulse block mb-2">Uploading file, please wait...</span>}
                     {formData.resume_url && !uploading.resume ? (
                         <div className="flex items-center gap-3">
                           <span className="text-xs font-medium text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5"/> Uploaded</span> 
@@ -373,11 +348,9 @@ export default function AuditorProfileSetup() {
                 </div>
               </div>
 
-              {/* Manpower, Assets & Competencies */}
               <div className="space-y-4">
                  <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Capabilities & Assets</h3>
                  
-                 {/* Asset Checkboxes */}
                  <div className="p-4 border rounded bg-muted/10">
                     <Label className="text-base mb-3 block">Assets Availability</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -427,7 +400,6 @@ export default function AuditorProfileSetup() {
                  )}
               </div>
 
-              {/* Location */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/50"><MapPin className="h-5 w-5 text-primary" /><h3 className="font-semibold text-lg">Location</h3></div>
                 

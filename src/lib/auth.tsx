@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      // FIX 1: Re-added the Promise.race timeout so the UI never freezes!
+      // 5-second timeout so the UI never freezes during DB reads
       const fetchPromise = Promise.all([
         supabase.from("profiles").select("role").eq("id", userId).maybeSingle(),
         supabase.from("user_roles").select("role").eq("user_id", userId).maybeSingle(),
@@ -86,19 +86,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== 'visible') return;
-      const { data: { session: latestSession } } = await supabase.auth.getSession();
-      if (!mounted) return;
       
-      if (!latestSession) {
-        setUser(null);
-        setSession(null);
-        setUserRole(null);
-        setIsProfileComplete(false);
-        navigate('/auth', { replace: true });
-      } else {
-        // Session alive — sync in case token was silently refreshed while hidden
-        setSession(latestSession);
-        setUser(latestSession.user);
+      try {
+        // Force a timeout so a slow mobile network doesn't freeze the app
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000))
+        ]);
+
+        if (!mounted) return;
+
+        // MOBILE FIX: If there is a network error (like when returning from file picker),
+        // DO NOT log the user out! Just ignore it and keep the current session.
+        if (sessionResult?.error) {
+            console.warn("Network slow after visibility change. Ignoring.");
+            return;
+        }
+        
+        if (!sessionResult?.data?.session) {
+          setUser(null);
+          setSession(null);
+          setUserRole(null);
+          setIsProfileComplete(false);
+          navigate('/auth', { replace: true });
+        } else {
+          // Session alive — sync in case token was silently refreshed while hidden
+          setSession(sessionResult.data.session);
+          setUser(sessionResult.data.session.user);
+        }
+      } catch (e) {
+          console.warn("Visibility check bypassed due to timeout");
       }
     };
 
@@ -146,6 +163,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (mounted) setLoading(false);
 
       } else if (event === 'TOKEN_REFRESHED') {
+        // DO NOT set loading to true here, it causes UI freezing and blank pages!
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
@@ -182,7 +200,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserRole(null);
       setIsProfileComplete(false);
 
-      // FIX 2: Let Supabase sign out FIRST, before killing localStorage!
+      // Step 2: Let Supabase sign out FIRST, before killing localStorage!
       await Promise.race([
         supabase.auth.signOut({ scope: 'local' }),
         new Promise<never>((_, reject) =>
