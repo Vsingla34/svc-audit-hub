@@ -44,9 +44,7 @@ export default function AuditorProfileSetup() {
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  // FIX 1: Lock local storage until initial load finishes so it doesn't wipe itself
   const [isLoaded, setIsLoaded] = useState(false);
-  
   const [loading, setLoading] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [uploading, setUploading] = useState({ gst: false, resume: false, profilePhoto: false });
@@ -64,7 +62,6 @@ export default function AuditorProfileSetup() {
 
   const [qualificationInput, setQualificationInput] = useState('');
 
-  // Auto-save ONLY if we have fully loaded the data first
   useEffect(() => {
     if (user?.id && isLoaded) {
       localStorage.setItem(`auditor_draft_${user.id}`, JSON.stringify(formData));
@@ -93,8 +90,6 @@ export default function AuditorProfileSetup() {
     
     const dbData = data || {};
 
-    // FIX 2: Functional updater to survive the race condition! 
-    // If handleFileUpload finishes BEFORE this DB fetch, 'prev' preserves the newly uploaded file!
     setFormData(prev => ({
       profile_photo_url: prev.profile_photo_url || localData?.profile_photo_url || dbData.profile_photo_url || '',
       qualifications: prev.qualifications.length ? prev.qualifications : (localData?.qualifications?.length ? localData.qualifications : dbData.qualifications || []),
@@ -116,14 +111,13 @@ export default function AuditorProfileSetup() {
       has_bike: prev.has_bike || localData?.has_bike !== undefined ? localData.has_bike : dbData.has_bike || false
     }));
 
-    setIsLoaded(true); // Unlock local storage saving
+    setIsLoaded(true); 
   };
 
   const uploadFile = async (file: File, type: string) => {
     if (!user) return null;
     const key = type as keyof typeof uploading;
     
-    // Use functional updater so states don't collide
     setUploading(prev => ({ ...prev, [key]: true }));
     
     const fileExt = file.name.split('.').pop();
@@ -157,15 +151,23 @@ export default function AuditorProfileSetup() {
 
     const path = await uploadFile(file, type);
     if (path) {
-      // FIX 3: Use functional updater to prevent stale state wiping out the rest of the form!
-      setFormData(prev => ({
-        ...prev,
-        [type === 'resume' ? 'resume_url' : type === 'profilePhoto' ? 'profile_photo_url' : 'gst_number']: path
-      }));
-      toast({ title: 'File uploaded', description: 'Document uploaded successfully' });
+      setFormData(prev => {
+        const newState = {
+          ...prev,
+          [type === 'resume' ? 'resume_url' : type === 'profilePhoto' ? 'profile_photo_url' : 'gst_number']: path
+        };
+        
+        // INSTANT SYNC: Force save to local storage immediately so it survives mobile tab reloads perfectly
+        if (user?.id) {
+          localStorage.setItem(`auditor_draft_${user.id}`, JSON.stringify(newState));
+        }
+        
+        return newState;
+      });
+      toast({ title: 'File uploaded', description: 'Document safely stored.' });
     }
     
-    e.target.value = ''; // FIX 4: Clear the hidden input so you can re-upload if needed
+    e.target.value = ''; 
   };
 
   const handleViewDocument = async (path: string) => {
