@@ -73,12 +73,15 @@ export default function AuditorProfileSetup() {
 
   const [qualificationInput, setQualificationInput] = useState('');
 
+  // FIX 1: Only run loadProfile if the user's ID string changes, NOT on every visibility update
   useEffect(() => {
-    loadProfile();
-  }, [user]);
+    if (user?.id) {
+      loadProfile();
+    }
+  }, [user?.id]); 
 
   const loadProfile = async () => {
-    if (!user) return;
+    if (!user?.id) return;
     
     const { data } = await supabase
       .from('auditor_profiles')
@@ -121,9 +124,9 @@ export default function AuditorProfileSetup() {
     const fileName = `${user.id}/${type}_${Date.now()}.${fileExt}`;
 
     try {
-      // Force an 8-second timeout so the UI never freezes on document uploads
+      // FIX 2: Increased timeout to 30 seconds (30000ms) to allow mobile networks time to upload PDFs
       const uploadPromise = supabase.storage.from('kyc-documents').upload(fileName, file, { upsert: true });
-      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Upload timed out')), 8000));
+      const timeoutPromise = new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Upload timed out. Connection is too slow.')), 30000));
       
       const { error: uploadError } = await Promise.race([uploadPromise, timeoutPromise]);
 
@@ -313,8 +316,9 @@ export default function AuditorProfileSetup() {
               <div className="space-y-4">
                  <h3 className="text-lg font-semibold flex items-center gap-2 border-b pb-2"><Users className="h-5 w-5 text-primary" /> Profile Photo (Optional)</h3>
                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                    <Input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'profilePhoto')} disabled={!isEditable} className="max-w-xs" />
-                    {formData.profile_photo_url && (
+                    <Input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'profilePhoto')} disabled={!isEditable || uploading.profilePhoto} className="max-w-xs" />
+                    {uploading.profilePhoto && <span className="text-sm text-primary animate-pulse">Uploading...</span>}
+                    {formData.profile_photo_url && !uploading.profilePhoto && (
                       <div className="flex items-center gap-3">
                         <span className="text-sm font-medium text-green-600 flex items-center gap-1"><CheckCircle2 className="h-4 w-4"/> Uploaded</span>
                         <Button type="button" variant="outline" size="sm" onClick={() => handleViewDocument(formData.profile_photo_url)} className="h-8 gap-1.5 text-primary border-primary/20 hover:bg-primary/5">
@@ -353,8 +357,9 @@ export default function AuditorProfileSetup() {
                   </div>
                   <div>
                     <Label className="font-bold block mb-2">Resume (PDF) *</Label>
-                    <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable} className="mb-2" />
-                    {formData.resume_url ? (
+                    <Input type="file" accept=".pdf" onChange={e => handleFileUpload(e, 'resume')} disabled={!isEditable || uploading.resume} className="mb-2" />
+                    {uploading.resume && <span className="text-xs text-primary animate-pulse block mb-2">Uploading large file, please wait...</span>}
+                    {formData.resume_url && !uploading.resume ? (
                         <div className="flex items-center gap-3">
                           <span className="text-xs font-medium text-green-600 flex items-center gap-1"><CheckCircle2 className="h-3.5 w-3.5"/> Uploaded</span> 
                           <Button type="button" variant="link" onClick={() => handleViewDocument(formData.resume_url)} className="h-auto p-0 text-primary text-xs flex items-center gap-1">
@@ -362,7 +367,7 @@ export default function AuditorProfileSetup() {
                           </Button>
                         </div>
                     ) : (
-                        <span className="text-xs text-destructive">Required for approval</span>
+                        !uploading.resume && <span className="text-xs text-destructive">Required for approval</span>
                     )}
                   </div>
                 </div>
@@ -466,8 +471,8 @@ export default function AuditorProfileSetup() {
               {isEditable && (
                 <div className="flex gap-4 pt-4">
                   {isEditing && <Button type="button" variant="ghost" className="flex-1" onClick={() => {setIsEditing(false); loadProfile();}}>Cancel</Button>}
-                  <Button type="button" variant="outline" className="flex-1" onClick={handleSaveDraft} disabled={savingDraft || loading}>Save Draft</Button>
-                  <Button type="submit" className="flex-1 bg-primary" disabled={loading}>Submit for KYC</Button>
+                  <Button type="button" variant="outline" className="flex-1" onClick={handleSaveDraft} disabled={savingDraft || loading || uploading.resume || uploading.profilePhoto}>Save Draft</Button>
+                  <Button type="submit" className="flex-1 bg-primary" disabled={loading || uploading.resume || uploading.profilePhoto}>Submit for KYC</Button>
                 </div>
               )}
             </form>
