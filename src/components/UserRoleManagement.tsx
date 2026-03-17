@@ -77,7 +77,7 @@ interface AuditorProfile {
   rating: number | null;
   profile_photo_url: string | null;
   resume_url: string | null;
-  kyc_status: string | null;
+  profile_status: string | null; // FIX: Changed from kyc_status to match DB
   pan_card: string | null;
 }
 
@@ -522,19 +522,21 @@ export function UserRoleManagement() {
 
                     <Separator />
 
-                    {/* Documents & KYC Section */}
+                    {/* Documents & Profile Status Section */}
                     <div className="space-y-4">
-                       <h4 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Documents & KYC Status</h4>
+                       <h4 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Documents & Profile Status</h4>
                        <div className="flex flex-col sm:flex-row gap-4">
                           
                           <div className="border rounded p-4 flex-1 flex flex-col justify-center items-center bg-muted/5">
-                              <div className="text-xs text-muted-foreground uppercase font-bold mb-2">KYC Status</div>
+                              {/* FIX: Changed label to Profile Status instead of KYC Status */}
+                              <div className="text-xs text-muted-foreground uppercase font-bold mb-2">Profile Status</div>
                               <div className="flex items-center gap-2">
                                   <div className={`h-2.5 w-2.5 rounded-full ${
-                                      detailedProfile.auditor_profile.kyc_status === 'approved' ? 'bg-green-500' : 
-                                      detailedProfile.auditor_profile.kyc_status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'
+                                      detailedProfile.auditor_profile.profile_status === 'approved' ? 'bg-green-500' : 
+                                      detailedProfile.auditor_profile.profile_status === 'rejected' ? 'bg-red-500' : 'bg-amber-500'
                                   }`} />
-                                  <span className="capitalize font-bold text-lg">{detailedProfile.auditor_profile.kyc_status || 'Pending'}</span>
+                                  {/* FIX: Use profile_status instead of kyc_status */}
+                                  <span className="capitalize font-bold text-lg">{detailedProfile.auditor_profile.profile_status || 'Pending'}</span>
                               </div>
                           </div>
 

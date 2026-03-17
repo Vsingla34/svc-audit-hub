@@ -46,6 +46,7 @@ export interface NavItem {
   href?: string;
   onClick?: () => void;
   activeId?: string;
+  isBottomNav?: boolean; // Controls if it appears in the bottom bar
 }
 
 interface DashboardLayoutProps {
@@ -56,7 +57,6 @@ interface DashboardLayoutProps {
   onTabChange?: (tab: string) => void;
 }
 
-// 1. Create a Context to track the Master Shell
 const DashboardContext = createContext<{
   setTitle: (t: string) => void;
   setNavItems: (n: NavItem[]) => void;
@@ -208,7 +208,11 @@ function AppSidebar({
                   const isActive = activeTab ? activeTab === itemActiveId : location.pathname.includes(item.href || '');
                   
                   return (
-                    <SidebarMenuItem key={item.title}>
+                    <SidebarMenuItem 
+                      key={item.title} 
+                      className={cn(item.isBottomNav ? "hidden md:block" : "block")}
+                    >
+                      {/* FIX 1: Comment moved safely inside the element */}
                       <SidebarMenuButton
                         onClick={() => {
                           if (item.href) navigate(item.href);
@@ -274,9 +278,9 @@ function AppSidebar({
 
 export function DashboardLayout({ children, title, navItems, activeTab, onTabChange }: DashboardLayoutProps) {
   const parentContext = useContext(DashboardContext);
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // 2. SMART BYPASS: If a DashboardLayout is nested inside another one (e.g. inside a page route),
-  // it doesn't draw a new sidebar. It just silently updates the Master Shell!
   useLayoutEffect(() => {
     if (parentContext) {
       parentContext.setTitle(title);
@@ -285,12 +289,10 @@ export function DashboardLayout({ children, title, navItems, activeTab, onTabCha
     }
   }, [parentContext, title, navItems, activeTab]);
 
-  // Just render the page content if we are nested!
   if (parentContext) {
     return <>{children}</>;
   }
 
-  // 3. --- MASTER SHELL MODE --- (Only renders once at the top level)
   const [currentTitle, setTitle] = useState(title);
   const [currentNavItems, setNavItems] = useState<NavItem[]>(navItems);
   const [currentActiveTab, setActiveTab] = useState<string | undefined>(activeTab);
@@ -302,6 +304,8 @@ export function DashboardLayout({ children, title, navItems, activeTab, onTabCha
     ? currentNavItems.filter(item => item.href === '/profile-setup') 
     : currentNavItems;
 
+  const bottomNavItems = filteredNavItems.filter(item => item.isBottomNav);
+
   const handleDeniedClick = () => {
     toast.error("Notifications Blocked", {
       description: "Please tap the lock icon (🔒) near your web address bar, change Notifications to 'Allow', and refresh the page.",
@@ -311,10 +315,10 @@ export function DashboardLayout({ children, title, navItems, activeTab, onTabCha
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
+      <div className="min-h-screen flex w-full bg-background relative">
         <AppSidebar navItems={filteredNavItems} activeTab={currentActiveTab} onTabChange={onTabChange} />
         
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           <header className="sticky top-0 z-10 h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
             <div className="flex h-full items-center gap-4 px-6">
               <SidebarTrigger className="-ml-2 p-2 rounded-lg hover:bg-accent transition-colors">
@@ -357,13 +361,53 @@ export function DashboardLayout({ children, title, navItems, activeTab, onTabCha
             </div>
           </header>
 
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-auto pb-20 md:pb-0">
             <div className="p-6 max-w-[1600px] mx-auto">
               <DashboardContext.Provider value={{ setTitle, setNavItems, setActiveTab }}>
                 {children}
               </DashboardContext.Provider>
             </div>
           </main>
+
+          {bottomNavItems.length > 0 && (
+            <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-[68px] bg-white border-t border-border shadow-[0_-10px_15px_-3px_rgb(0,0,0,0.05)] flex items-center overflow-x-auto no-scrollbar pb-1">
+              {bottomNavItems.map((item) => {
+                const itemActiveId = item.activeId || item.title.toLowerCase().replace(/\s+/g, '-');
+                const isActive = currentActiveTab ? currentActiveTab === itemActiveId : location.pathname.includes(item.href || '');
+                
+                return (
+                  <button
+                    key={item.title}
+                    onClick={() => {
+                      if (item.href) navigate(item.href);
+                      else if (item.onClick) item.onClick();
+                      else if (onTabChange) onTabChange(itemActiveId);
+                    }}
+                    className={cn(
+                      "flex flex-col items-center justify-center flex-1 h-full space-y-1 relative transition-all duration-200",
+                      isActive ? "text-[#4338CA]" : "text-muted-foreground hover:bg-muted/50"
+                    )}
+                  >
+                    {isActive && (
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-[3px] bg-[#4338CA] rounded-b-full" />
+                    )}
+                    
+                    <item.icon className={cn(
+                      "h-5 w-5 transition-transform mt-1", 
+                      isActive && "scale-110 stroke-[2.5px]"
+                    )} />
+                    
+                    <span className={cn(
+                      "text-[10px] text-center leading-none px-1 truncate w-full", 
+                      isActive ? "font-bold text-[#4338CA]" : "font-medium"
+                    )}>
+                      {item.title}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
         </div>
       </div>
     </SidebarProvider>
@@ -371,21 +415,21 @@ export function DashboardLayout({ children, title, navItems, activeTab, onTabCha
 }
 
 export const adminNavItems: NavItem[] = [
-  { title: 'Overview', icon: LayoutDashboard, href: '/admin/overview', activeId: 'overview' },
-  { title: 'Assignments', icon: Briefcase, href: '/admin/assignments', activeId: 'assignments' },
-  { title: 'Applications & KYC', icon: FileCheck, href: '/admin/applications', activeId: 'applications' },
+  { title: 'Overview', icon: LayoutDashboard, href: '/admin/overview', activeId: 'overview', isBottomNav: true },
+  { title: 'Assignments', icon: Briefcase, href: '/admin/assignments', activeId: 'assignments', isBottomNav: true },
+  { title: 'Applications & KYC', icon: FileCheck, href: '/admin/applications', activeId: 'applications', isBottomNav: true },
   { title: 'Deadlines', icon: AlertTriangle, href: '/admin/deadlines', activeId: 'deadlines' },
   { title: 'Reports', icon: FileText, href: '/admin/reports', activeId: 'reports' },
   { title: 'User Roles', icon: Shield, href: '/admin/users', activeId: 'user-roles' },
   { title: 'Map View', icon: MapPin, href: '/map' },
-  { title: 'Payments', icon: DollarSign, href: '/payments' },
+  { title: 'Payments', icon: DollarSign, href: '/payments', isBottomNav: true },
 ];
 
 export const auditorNavItems: NavItem[] = [
-  { title: 'Overview', icon: LayoutDashboard, href: '/auditor/overview', activeId: 'overview' },
+  { title: 'Overview', icon: LayoutDashboard, href: '/auditor/overview', activeId: 'overview', isBottomNav: true },
   { title: 'My Profile', icon: Users, href: '/profile-setup' },
   { title: 'Bank & KYC', icon: Landmark, href: '/bank-kyc' },
-  { title: 'Available Jobs', icon: Briefcase, href: '/auditor/available-jobs', activeId: 'available-jobs' },
-  { title: 'My Jobs', icon: FileCheck, href: '/auditor/assignments', activeId: 'my-jobs' }, 
-  { title: 'Payments', icon: DollarSign, href: '/payments' },
+  { title: 'Available Jobs', icon: Briefcase, href: '/auditor/available-jobs', activeId: 'available-jobs', isBottomNav: true },
+  { title: 'My Jobs', icon: FileCheck, href: '/auditor/assignments', activeId: 'my-jobs', isBottomNav: true }, 
+  { title: 'Payments', icon: DollarSign, href: '/payments', isBottomNav: true },
 ];

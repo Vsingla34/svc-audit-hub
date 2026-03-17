@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, MapPin, Calendar, Clock, Info, Laptop, 
-  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation, Shield, Lock, IndianRupee
+  CheckCircle2, FileText, Upload, FileCheck, ExternalLink, Navigation, Shield, Lock, IndianRupee, AlertTriangle
 } from 'lucide-react';
 import { format, isPast, isToday } from 'date-fns';
 import { DashboardLayout, auditorNavItems, adminNavItems } from '@/components/DashboardLayout';
@@ -31,6 +31,8 @@ export default function AssignmentDetail() {
   
   // Validation States
   const [isBankKycComplete, setIsBankKycComplete] = useState(false);
+  const [bankStatus, setBankStatus] = useState<string>('unverified');
+  const [profileStatus, setProfileStatus] = useState<string>('unverified');
   const { isComplete: profileComplete, missingFields } = useProfileValidation();
   
   // Application Dialog State
@@ -51,23 +53,39 @@ export default function AssignmentDetail() {
     if (id) {
       fetchAssignmentDetails();
     }
-    if (user) {
+    if (user && userRole === 'auditor') {
       checkBankKycStatus();
+      fetchAuditorProfileStatus();
     }
-  }, [id, user]);
+  }, [id, user, userRole]);
 
   const checkBankKycStatus = async () => {
     if (!user) return;
     try {
       const { data } = await supabase
         .from('bank_kyc_details')
-        .select('id')
+        .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
       
       setIsBankKycComplete(!!data);
+      if (data?.status) setBankStatus(data.status);
     } catch (error) {
       console.error('Error checking KYC:', error);
+    }
+  };
+
+  const fetchAuditorProfileStatus = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+          .from('auditor_profiles')
+          .select('profile_status')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      if (data?.profile_status) setProfileStatus(data.profile_status);
+    } catch (error) {
+      console.error('Error fetching profile status:', error);
     }
   };
 
@@ -114,23 +132,21 @@ export default function AssignmentDetail() {
   const handleApplyClick = () => {
     if (!user) return;
     
-    if (!profileComplete) {
-      toast({ 
-        title: 'Incomplete Profile', 
-        description: `Please complete your profile first. Missing: ${missingFields.join(', ')}`, 
-        variant: 'destructive' 
-      });
-      navigate('/profile-setup');
+    if (profileStatus !== 'approved') {
+      toast({ title: 'Verification Required', description: `Your profile must be approved by an admin before you can apply.`, variant: 'destructive' });
+      navigate('/my-profile');
       return;
     }
 
-    if (!isBankKycComplete) {
-      toast({ 
-        title: 'Incomplete Bank/KYC', 
-        description: 'Please complete your Bank and KYC details before applying.', 
-        variant: 'destructive' 
-      });
+    if (!isBankKycComplete || bankStatus === 'rejected') {
+      toast({ title: 'Bank KYC Required', description: 'Your Bank Details must be verified before applying.', variant: 'destructive' });
       navigate('/bank-kyc');
+      return;
+    }
+
+    if (!profileComplete) {
+      toast({ title: 'Incomplete Profile', description: `Please complete your profile first. Missing: ${missingFields.join(', ')}`, variant: 'destructive' });
+      navigate('/profile-setup');
       return;
     }
 
@@ -142,24 +158,24 @@ export default function AssignmentDetail() {
     if (!user || !id) return;
 
     if (!interestReason.trim()) {
-      toast({ 
-        title: "Reason Required", 
-        description: "Please explain why you are interested in this assignment.", 
-        variant: "destructive" 
-      });
+      toast({ title: "Reason Required", description: "Please explain why you are interested in this assignment.", variant: "destructive" });
       return;
     }
 
     setSubmittingApp(true);
     try {
+      // 1. Check current application count
       const { data: job } = await supabase.from('assignments').select('applicant_count').eq('id', id).single();
-      if (job && job.applicant_count >= 5) {
+      const currentCount = job?.applicant_count || 0;
+      
+      if (currentCount >= 5) {
          toast({ title: "Limit Reached", description: "Maximum application limit (5) reached just now.", variant: "destructive" });
          setApplyDialogOpen(false);
          fetchAssignmentDetails();
          return;
       }
 
+      // 2. Submit the application
       const { error } = await supabase
         .from('applications')
         .insert({
@@ -170,6 +186,12 @@ export default function AssignmentDetail() {
         });
 
       if (error) throw error;
+
+      // 3. STEP 1 FIX: Increment the applicant_count by 1 so the Job Board knows to hide it
+      await supabase
+         .from('assignments')
+         .update({ applicant_count: currentCount + 1 })
+         .eq('id', id);
 
       await supabase.from('assignment_activities').insert({
         assignment_id: id,
@@ -267,13 +289,21 @@ export default function AssignmentDetail() {
 
   const auditDate = new Date(assignment.audit_date);
   const isActive = isToday(auditDate) || isPast(auditDate);
+  const totalPayout = (assignment.fees || 0) + (assignment.ope || 0) + (assignment.reimbursement_food || 0) + (assignment.reimbursement_courier || 0) + (assignment.reimbursement_conveyance || 0);
 
-  // Calculate Total Max Payout
-  const totalPayout = (assignment.fees || 0) + 
-                      (assignment.ope || 0) + 
-                      (assignment.reimbursement_food || 0) + 
-                      (assignment.reimbursement_courier || 0) + 
-                      (assignment.reimbursement_conveyance || 0);
+  let applyButtonText = 'Apply Now';
+  let isApplyDisabled = submittingApp;
+
+  if (profileStatus === 'rejected') {
+    applyButtonText = 'Profile Rejected';
+    isApplyDisabled = true;
+  } else if (profileStatus !== 'approved') {
+    applyButtonText = 'Profile Approval Pending';
+    isApplyDisabled = true;
+  } else if (!isBankKycComplete || bankStatus === 'rejected') {
+    applyButtonText = 'Bank KYC Required';
+    isApplyDisabled = true;
+  }
 
   return (
     <DashboardLayout title="Assignment Details" navItems={navItems}>
@@ -282,7 +312,6 @@ export default function AssignmentDetail() {
           <ArrowLeft className="h-4 w-4" /> Back to Jobs
         </Button>
 
-        {/* INACTIVE BANNER */}
         {isAllottedToMe && !isActive && (
            <Alert className="border-amber-200 bg-amber-50">
               <Lock className="h-4 w-4 text-amber-600"/>
@@ -321,7 +350,6 @@ export default function AssignmentDetail() {
                       {assignment.city}, {assignment.state} {assignment.pincode && `- ${assignment.pincode}`}
                     </span>
                     
-                    {/* NEW: Sleek inline map button */}
                     <Button 
                       variant="secondary" 
                       size="sm" 
@@ -337,14 +365,12 @@ export default function AssignmentDetail() {
                     </Button>
                   </div>
                   
-                  {/* Shows the address to everyone */}
                   {assignment.address && (
                     <span className="text-sm text-foreground ml-6">
                       Address: {assignment.address}
                     </span>
                   )}
 
-                  {/* Keeps the specific branch name hidden unless authorized */}
                   {canViewClientName && (
                     <span className="text-sm text-muted-foreground ml-6">
                       Branch: {displaySubtitle}
@@ -392,7 +418,6 @@ export default function AssignmentDetail() {
                 </div>
               </section>
 
-              {/* PAYOUT BREAKDOWN SECTION */}
               <section>
                 <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
                   <IndianRupee className="h-5 w-5 text-primary" /> Payout & Allowances Breakdown
@@ -442,7 +467,6 @@ export default function AssignmentDetail() {
                 </section>
               )}
 
-              {/* REPORT SECTION: ONLY SHOW IF ACTIVE */}
               {isAllottedToMe && isActive && (
                 <section className="mt-8 border-t pt-6">
                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -499,8 +523,15 @@ export default function AssignmentDetail() {
                           <CheckCircle2 className="h-4 w-4 mr-2" /> Applied
                         </Button>
                       ) : (
-                        <Button className="w-full" size="lg" onClick={handleApplyClick} disabled={submittingApp}>
-                          {submittingApp ? 'Processing...' : 'Apply Now'}
+                        <Button 
+                          className="w-full" 
+                          size="lg" 
+                          variant={isApplyDisabled ? "secondary" : "default"}
+                          onClick={handleApplyClick} 
+                          disabled={isApplyDisabled}
+                        >
+                          {isApplyDisabled && <AlertTriangle className="h-4 w-4 mr-2 text-muted-foreground" />}
+                          {applyButtonText}
                         </Button>
                       )
                     ) : (
@@ -519,7 +550,7 @@ export default function AssignmentDetail() {
                        <Button 
                           className="w-full justify-start" 
                           variant="outline" 
-                          disabled={!isActive} // Disable Nav if inactive
+                          disabled={!isActive}
                           onClick={() => {
                             const query = assignment.address 
                               ? `${assignment.address}, ${assignment.city}, ${assignment.state} ${assignment.pincode || ''}, India`

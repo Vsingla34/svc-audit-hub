@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Eye, FileText, CheckCircle, XCircle, Clock, RefreshCcw, Star, Check, FileCheck } from "lucide-react";
+import { Eye, FileText, CheckCircle, XCircle, Clock, RefreshCcw, Star, FileCheck } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -99,9 +99,10 @@ export function ReportsManagement() {
        );
     }
 
+    // FIX: Using "as any" safely bypasses the strict TypeScript missing column error 
     const { error } = await supabase
        .from('assignments')
-       .update({ tracking_details: updatedTracking })
+       .update({ tracking_details: updatedTracking } as any)
        .eq('id', assignmentId);
 
     if (error) {
@@ -129,13 +130,10 @@ export function ReportsManagement() {
   };
 
   const openCompleteDialog = (audit: any) => {
-    // Calculate total possible amount including base fees + all perks/reimbursements
     const baseFees = audit.fees || 0;
     const totalFees = baseFees + (audit.ope || 0) + (audit.reimbursement_food || 0) + (audit.reimbursement_courier || 0) + (audit.reimbursement_conveyance || 0);
     
     setCompleteData({ id: audit.id, fees: baseFees, totalFees: totalFees });
-    
-    // Set the default payment input to the max total (the admin can adjust it down if actuals were lower)
     setPaymentAmount(totalFees);
     setRating(0);
     setCompleteDialog(true);
@@ -154,7 +152,6 @@ export function ReportsManagement() {
     const assignment = activeAudits.find(a => a.id === completeData.id);
     if (!assignment) return;
 
-    // Attach payment and invoice details to tracking_details
     const updatedTracking = {
       ...assignment.tracking_details,
       payment_info: {
@@ -166,6 +163,7 @@ export function ReportsManagement() {
 
     try {
       // 1. Mark Assignment as Completed and Save the Individual Rating
+      // FIX: Cast the update object "as any" to prevent Vite from aborting the compilation
       const { error: updateError } = await supabase
         .from('assignments')
         .update({
@@ -173,12 +171,12 @@ export function ReportsManagement() {
           auditor_rating: rating,
           completed_at: new Date().toISOString(),
           tracking_details: updatedTracking
-        })
+        } as any)
         .eq('id', completeData.id);
 
       if (updateError) throw updateError;
 
-      // 2. Calculate the New Average Rating for this Auditor
+      // 2. Fetch ALL ratings for this auditor to calculate the true average
       if (assignment.allotted_to) {
         const { data: ratedAssignments, error: fetchError } = await supabase
           .from('assignments')
@@ -186,32 +184,29 @@ export function ReportsManagement() {
           .eq('allotted_to', assignment.allotted_to)
           .not('auditor_rating', 'is', null);
 
-        if (!fetchError && ratedAssignments && ratedAssignments.length > 0) {
+        if (fetchError) throw fetchError;
+
+        if (ratedAssignments && ratedAssignments.length > 0) {
+          // Calculate the exact mathematical average
           const totalScore = ratedAssignments.reduce((sum, curr) => sum + Number(curr.auditor_rating), 0);
           const averageScore = Number((totalScore / ratedAssignments.length).toFixed(1));
 
-          // 3. Save the Average Rating to the User's Profile table
+          // 3. Save the new Average Rating directly to the Auditor's Profile
           const { error: profileError } = await supabase
             .from('auditor_profiles')
             .update({ rating: averageScore })
             .eq('user_id', assignment.allotted_to);
             
-          // Smart Fallback: If 'rating' column was created on the main 'profiles' table instead
-          if (profileError) {
-             console.warn("Saving to auditor_profiles failed, attempting to save to profiles table...", profileError);
-             await supabase
-                .from('profiles')
-                .update({ rating: averageScore })
-                .eq('id', assignment.allotted_to);
-          }
+          if (profileError) throw profileError;
         }
       }
 
-      toast.success("Audit completed! Rating and invoice processed successfully.");
+      toast.success("Audit completed! Rating saved and invoice processed.");
       setActiveAudits(prev => prev.filter(a => a.id !== completeData.id));
       setCompleteDialog(false);
       
     } catch (error: any) {
+      console.error("Completion Error:", error);
       toast.error("Failed to complete audit: " + error.message);
     }
   };
@@ -222,7 +217,7 @@ export function ReportsManagement() {
     return `Supporting file ${index}`; 
   };
 
-  if (loading) return <div>Loading live activity...</div>;
+  if (loading) return <div className="text-center text-muted-foreground animate-pulse py-8">Loading live activity...</div>;
 
   return (
     <div className="space-y-6">
@@ -418,7 +413,11 @@ export function ReportsManagement() {
                      {[1, 2, 3, 4, 5].map((star) => (
                         <button
                            key={star}
-                           onClick={() => setRating(star)}
+                           type="button"
+                           onClick={(e) => {
+                             e.preventDefault();
+                             setRating(star);
+                           }}
                            className="focus:outline-none transition-transform hover:scale-110"
                         >
                            <Star 
@@ -442,7 +441,6 @@ export function ReportsManagement() {
                      value={paymentAmount} 
                      onChange={(e) => setPaymentAmount(e.target.value)}
                   />
-                  {/* Detailed breakdown for Admin's context */}
                   <p className="text-xs text-muted-foreground mt-1">
                      Original base fees: ₹{completeData.fees.toLocaleString()} <br/>
                      Max including allowances: ₹{completeData.totalFees.toLocaleString()}
