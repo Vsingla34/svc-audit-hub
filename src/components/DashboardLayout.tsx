@@ -96,7 +96,8 @@ export function DashboardLayout({ title, navItems, activeTab, children }: Dashbo
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        {/* HIDING SCROLLBAR HERE WITH TAILWIND ARBITRARY VARIANTS */}
+        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <div className="mb-4 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
             {userRole === 'admin' ? 'Admin Panel' : 'Auditor Portal'}
           </div>
