@@ -19,7 +19,7 @@ export default function AdminApplicationsPage() {
   const [applications, setApplications] = useState<any[]>([]);
   const [auditorDetails, setAuditorDetails] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
-  
+
   // Dialog States
   const [appDetailOpen, setAppDetailOpen] = useState(false);
   const [viewingApplication, setViewingApplication] = useState<any>(null);
@@ -54,7 +54,7 @@ export default function AdminApplicationsPage() {
           assignment: Array.isArray(app.assignment) ? app.assignment[0] : (app.assignment || {}),
           auditor: Array.isArray(app.auditor) ? app.auditor[0] : (app.auditor || {})
         })).filter(app => 
-           // Only show Open assignments (with pending apps) OR Allotted assignments (so we can change auditor)
+            // Only show Open assignments (with pending apps) OR Allotted assignments (so we can change auditor)
           ['open', 'allotted'].includes(app.assignment.status) &&
           (app.assignment.status === 'allotted' || app.status === 'pending')
         );
@@ -88,9 +88,9 @@ export default function AdminApplicationsPage() {
         .select(`*, profiles(full_name, email, phone)`)
         .or('profile_status.eq.pending,bank_status.eq.pending') 
         .order('updated_at', { ascending: false });
-
+        
       if (error) throw error;
-
+      
       return (data || []).map(kyc => ({
         ...kyc,
         profiles: Array.isArray(kyc.profiles) ? kyc.profiles[0] : (kyc.profiles || {})
@@ -104,7 +104,22 @@ export default function AdminApplicationsPage() {
   const resolveApplication = useMutation({
     mutationFn: async ({ id, action, type, pendingData, userId }: { id: string, action: 'approve' | 'reject', type: 'Profile' | 'Bank', pendingData: any, userId: string }) => {
       const updatePayload: any = {};
-      const safeData = pendingData || {}; 
+      const safeData = pendingData ? { ...pendingData } : {};
+
+      // --- SANITIZATION BLOCK ---
+      // Fix for previously corrupted draft data where booleans/numbers were saved as empty strings
+      Object.keys(safeData).forEach(key => {
+        if (safeData[key] === "") {
+          if (key.startsWith('has_') || key.includes('laptop') || key.includes('smartphone') || key.includes('bike')) {
+            safeData[key] = false;
+          } else if (key.includes('count') || key.includes('years') || key.includes('radius')) {
+            safeData[key] = 0;
+          } else {
+            safeData[key] = null; // Use null for empty strings on text/url fields to be safe with DB schema
+          }
+        }
+      });
+      // --------------------------
 
       if (type === 'Profile') {
         if (action === 'approve') {
@@ -114,7 +129,7 @@ export default function AdminApplicationsPage() {
         } else {
           updatePayload.profile_status = 'rejected';
         }
-        updatePayload.pending_profile_data = {}; 
+        updatePayload.pending_profile_data = null; // Use null to clear the draft securely
       } else {
         if (action === 'approve') {
           const { data: existingBank } = await supabase.from('bank_kyc_details').select('id').eq('user_id', userId).maybeSingle();
@@ -127,7 +142,7 @@ export default function AdminApplicationsPage() {
         } else {
           updatePayload.bank_status = 'rejected';
         }
-        updatePayload.pending_bank_data = {}; 
+        updatePayload.pending_bank_data = null; 
       }
 
       const { error } = await supabase
@@ -196,10 +211,10 @@ export default function AdminApplicationsPage() {
     return grouped;
   }, [applications]);
 
-  const openApplicationDetail = (app: any) => { 
-    setViewingApplication(app); 
-    setAppDetailOpen(true); 
-    fetchBankDetails(app.auditor_id);
+  const openApplicationDetail = (app: any) => {
+     setViewingApplication(app);
+     setAppDetailOpen(true);
+     fetchBankDetails(app.auditor_id);
   };
 
   // --- ASSIGNMENT ALLOCATION LOGIC ---
@@ -224,6 +239,7 @@ export default function AdminApplicationsPage() {
       if (rejectedApps && rejectedApps.length > 0) {
         const rejectedIds = rejectedApps.map(a => a.id);
         await supabase.from('applications').update({ status: 'rejected' }).in('id', rejectedIds);
+
         const notifications = rejectedApps.map(app => ({
           user_id: app.auditor_id,
           title: 'Application Update',
@@ -301,7 +317,6 @@ export default function AdminApplicationsPage() {
         </div>
       );
     }
-
     return (
       <div className="space-y-4 mt-6 animate-in fade-in duration-300">
         <h3 className="text-lg font-bold flex items-center gap-2 border-b pb-2">
@@ -404,6 +419,7 @@ export default function AdminApplicationsPage() {
                            const allottedApp = group.applicants.find(a => a.status === 'accepted');
                            if (!allottedApp) return <div className="p-6 text-destructive italic">Error: Auditor data missing</div>;
                            const details = auditorDetails[allottedApp.auditor_id] || {};
+
                            return (
                               <div className="p-6">
                                  <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Currently Allotted To</h4>
@@ -509,7 +525,6 @@ export default function AdminApplicationsPage() {
                           <p className="text-sm text-muted-foreground">{kyc.profiles?.email || 'No email'}</p>
                         </div>
                       </div>
-
                       <Button onClick={() => handleReviewKycClick(kyc, 'Profile')} variant="outline" className="w-full md:w-auto border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 shadow-sm">
                         <UserCheck className="h-4 w-4 mr-2" /> Review Profile Details
                       </Button>
@@ -547,7 +562,6 @@ export default function AdminApplicationsPage() {
                           <p className="text-sm text-muted-foreground">{kyc.profiles?.email || 'No email'}</p>
                         </div>
                       </div>
-
                       <Button onClick={() => handleReviewKycClick(kyc, 'Bank')} variant="outline" className="w-full md:w-auto border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 shadow-sm">
                         <Building2 className="h-4 w-4 mr-2" /> Review Bank & KYC
                       </Button>
@@ -562,7 +576,7 @@ export default function AdminApplicationsPage() {
       </div>
 
       {/* --- DIALOGS --- */}
-
+      
       {/* JOB Application Detail Dialog */}
       <Dialog open={appDetailOpen} onOpenChange={setAppDetailOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -586,7 +600,7 @@ export default function AdminApplicationsPage() {
                         <h3 className="font-bold text-lg">{viewingApplication.auditor?.full_name || 'Unknown Auditor'}</h3>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <MapPin className="h-3 w-3" /> 
-                          {auditorDetails[viewingApplication.auditor_id].base_city || 'Unknown'}, {auditorDetails[viewingApplication.auditor_id].base_state || 'Unknown'}
+                           {auditorDetails[viewingApplication.auditor_id].base_city || 'Unknown'}, {auditorDetails[viewingApplication.auditor_id].base_state || 'Unknown'}
                         </div>
                      </div>
                   </div>
@@ -697,24 +711,23 @@ export default function AdminApplicationsPage() {
               pendingData={reviewType === 'Profile' ? selectedKycAuditor.pending_profile_data : selectedKycAuditor.pending_bank_data}
               isProcessing={resolveApplication.isPending}
               onApprove={() => resolveApplication.mutate({ 
-                id: selectedKycAuditor.id, 
-                userId: selectedKycAuditor.user_id,
+                 id: selectedKycAuditor.id, 
+                 userId: selectedKycAuditor.user_id,
                 action: 'approve', 
-                type: reviewType, 
-                pendingData: reviewType === 'Profile' ? selectedKycAuditor.pending_profile_data : selectedKycAuditor.pending_bank_data 
-              })}
+                 type: reviewType, 
+                 pendingData: reviewType === 'Profile' ? selectedKycAuditor.pending_profile_data : selectedKycAuditor.pending_bank_data 
+               })}
               onReject={() => resolveApplication.mutate({ 
-                id: selectedKycAuditor.id, 
-                userId: selectedKycAuditor.user_id,
+                 id: selectedKycAuditor.id, 
+                 userId: selectedKycAuditor.user_id,
                 action: 'reject', 
-                type: reviewType, 
-                pendingData: null 
-              })}
+                 type: reviewType, 
+                 pendingData: null 
+               })}
             />
           )}
         </DialogContent>
       </Dialog>
-
     </DashboardLayout>
   );
 }

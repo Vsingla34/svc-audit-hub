@@ -20,10 +20,9 @@ export default function ProfileEdit() {
   const [saving, setSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
   
-  // Track the NEW profile status for the UI
   const [profileStatus, setProfileStatus] = useState<string>('unverified');
   const [originalSensitiveData, setOriginalSensitiveData] = useState<any>({});
-
+  
   const [formData, setFormData] = useState({
     full_name: '', phone: '', qualifications: '', pan_card: '', gst_number: '',
     experience_years: 0, preferred_states: '', preferred_cities: '', 
@@ -41,30 +40,30 @@ export default function ProfileEdit() {
     try {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', user?.id).single();
       const { data: audProfile } = await supabase.from('auditor_profiles').select('*').eq('user_id', user?.id).maybeSingle();
-
-      // Read from the correct NEW status column
+      
       setProfileStatus(audProfile?.profile_status || 'unverified');
-
+      
       // Store a snapshot of ONLY the live fields that require approval for comparison
       setOriginalSensitiveData({
         qualifications: audProfile?.qualifications?.join(', ') || '',
         resume_url: audProfile?.resume_url || '',
-        has_manpower: audProfile?.has_manpower || false,
+        has_manpower: audProfile?.has_manpower ?? false,
         manpower_count: audProfile?.manpower_count || 0,
         competencies: audProfile?.competencies?.join(', ') || '',
         core_competency: audProfile?.core_competency || '',
         address: audProfile?.address || '',
       });
 
-      // If they have a pending draft, load the drafted changes. Otherwise, load live data.
       const isPending = audProfile?.profile_status === 'pending';
       const draft = audProfile?.pending_profile_data || {};
       
+      // FIXED: Properly handle booleans and numbers to prevent type mismatch crashes
       const getValue = (key: string, isArray = false) => {
         if (isPending && draft[key] !== undefined && draft[key] !== null) {
           return isArray && Array.isArray(draft[key]) ? draft[key].join(', ') : draft[key];
         }
         const val = audProfile?.[key];
+        if (typeof val === 'boolean' || typeof val === 'number') return val;
         return isArray && Array.isArray(val) ? val.join(', ') : (val || '');
       };
 
@@ -108,14 +107,14 @@ export default function ProfileEdit() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, fieldName: string) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
     setUploadingField(fieldName);
+    
     try {
       const fileExt = file.name.split('.').pop();
       const filePath = `${user.id}/profile/${fieldName}-${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage.from('kyc-documents').upload(filePath, file);
       if (uploadError) throw uploadError;
-
+      
       setFormData(prev => ({ ...prev, [fieldName]: filePath }));
       toast.success('File uploaded successfully!');
     } catch (error: any) {
@@ -186,7 +185,7 @@ export default function ProfileEdit() {
         updatePayload.pending_profile_data = draftPayload; 
       } else {
         // No approval needed, merge into live columns
-        Object.assign(updatePayload, draftPayload); 
+        Object.assign(updatePayload, draftPayload);
       }
 
       const { data: existing } = await supabase.from('auditor_profiles').select('id').eq('user_id', user.id).maybeSingle();
@@ -206,7 +205,7 @@ export default function ProfileEdit() {
         toast.success('Profile updated instantly!');
       }
       
-      navigate('/dashboard'); 
+      navigate('/dashboard');
     } catch (error: any) {
       toast.error(error.message || 'Failed to save profile');
     } finally {
@@ -246,6 +245,7 @@ export default function ProfileEdit() {
           </CardHeader>
 
           <CardContent className="space-y-8 pt-8">
+            
             {/* PERSONAL DETAILS */}
             <div>
               <h3 className="text-lg font-semibold flex items-center gap-2 mb-4"><User className="h-5 w-5 text-[#4338CA]"/> Personal Information</h3>
@@ -320,7 +320,6 @@ export default function ProfileEdit() {
             </div>
 
           </CardContent>
-
           <CardFooter className="bg-muted/5 border-t px-6 py-4 flex justify-end">
             <Button size="lg" className="bg-[#4338CA] hover:bg-[#4338CA]/90 font-semibold px-8" onClick={handleSave} disabled={saving || uploadingField !== null}>
               {saving ? 'Saving Profile...' : profileStatus === 'pending' ? 'Update Draft Changes' : 'Save Profile'}

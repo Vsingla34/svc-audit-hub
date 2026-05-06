@@ -21,10 +21,29 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
   const [trackingData, setTrackingData] = useState<any>(assignment.tracking_details || {});
   const [uploading, setUploading] = useState(false);
   const [activeSlots, setActiveSlots] = useState<number[]>([1, 2]);
+  
+  // NEW: State to securely hold the signed URL for the check-in selfie
+  const [checkInPhotoUrl, setCheckInPhotoUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setTrackingData(assignment.tracking_details || {});
   }, [assignment.tracking_details]);
+
+  // NEW: Effect to fetch the signed URL whenever a check-in URL is present in tracking data
+  useEffect(() => {
+    if (trackingData?.check_in?.url) {
+      const path = trackingData.check_in.url;
+      if (path.startsWith('http')) {
+        setCheckInPhotoUrl(path);
+      } else {
+        supabase.storage.from('kyc-documents').createSignedUrl(path, 3600).then(({ data }) => {
+          if (data?.signedUrl) setCheckInPhotoUrl(data.signedUrl);
+        });
+      }
+    } else {
+      setCheckInPhotoUrl(null);
+    }
+  }, [trackingData?.check_in?.url]);
 
   useEffect(() => {
     if (trackingData?.reports?.length > 0) {
@@ -43,15 +62,15 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
 
      const { error } = await supabase
         .from('assignments')
-        .update({ 
-           tracking_details: updated,
+        .update({
+            tracking_details: updated,
            status: 'in_progress' 
-        })
+         })
         .eq('id', assignment.id);
-        
-     if (error) { 
-        toast.error("Failed to update report in database"); 
-        setTrackingData(assignment.tracking_details || {});
+      
+     if (error) {
+         toast.error("Failed to update report in database");
+         setTrackingData(assignment.tracking_details || {});
      } else {
         onUpdate();
      }
@@ -63,20 +82,21 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
         const path = `${user?.id}/check-in/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
         const { error } = await supabase.storage.from('kyc-documents').upload(path, file);
         if (error) throw error;
+        
         await updateTrackingData({ check_in: { url: path, status: 'pending', timestamp: new Date().toISOString() } });
         toast.success("Check-in photo uploaded!");
-     } catch (e:any) { 
-        toast.error(e.message); 
-     } finally { 
-        setUploading(false); 
-     }
+     } catch (e:any) {
+         toast.error(e.message);
+      } finally {
+         setUploading(false);
+      }
   };
 
   const handleStartAssignment = async (started: boolean) => {
-     if (started) { 
-        await updateTrackingData({ is_started: true }); 
-        toast.success("Assignment started!"); 
-     }
+     if (started) {
+         await updateTrackingData({ is_started: true });
+         toast.success("Assignment started!");
+      }
   };
 
   const handleReportUpload = async (file: File, slot: number) => {
@@ -85,23 +105,26 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
         const path = `${user?.id}/reports/${Date.now()}-slot${slot}-${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
         const { error } = await supabase.storage.from('kyc-documents').upload(path, file);
         if (error) {
-           if (error.message.includes('mime') || error.message.includes('Type')) { 
-               toast.error("File type not allowed."); 
-           } else { 
-               throw error; 
-           }
+           if (error.message.includes('mime') || error.message.includes('Type')) {
+                toast.error("File type not allowed.");
+            } else {
+                throw error;
+            }
            return;
         }
+
         const newReport = { id: crypto.randomUUID(), name: file.name, url: path, status: 'pending', slot: slot, type: file.type, timestamp: new Date().toISOString() };
+        
         const currentReports = trackingData.reports || [];
         const otherReports = currentReports.filter((r: any) => r.slot !== slot);
+        
         await updateTrackingData({ reports: [...otherReports, newReport] });
         toast.success(`Report uploaded successfully!`);
-     } catch (e:any) { 
-        toast.error(e.message || "Upload failed"); 
-     } finally { 
-        setUploading(false); 
-     }
+     } catch (e:any) {
+         toast.error(e.message || "Upload failed");
+      } finally {
+         setUploading(false);
+      }
   };
 
   const deleteReportFile = async (reportId: string) => {
@@ -134,17 +157,17 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
      
      const { error } = await supabase
         .from('assignments')
-        .update({ 
-           status: 'in_progress', 
-           tracking_details: { ...trackingData, check_out: { completed: true, timestamp: new Date().toISOString() } } 
-        })
+        .update({
+            status: 'in_progress', 
+            tracking_details: { ...trackingData, check_out: { completed: true, timestamp: new Date().toISOString() } } 
+         })
         .eq('id', assignment.id);
-        
+      
      if (error) {
-         toast.error("Check out failed"); 
-     } else { 
-         toast.success("Check out submitted! Awaiting Admin Review."); 
-         onUpdate();
+         toast.error("Check out failed");
+      } else {
+          toast.success("Check out submitted! Awaiting Admin Review.");
+          onUpdate();
      }
   };
 
@@ -154,6 +177,7 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
   const reports = trackingData?.reports || [];
   const hasReports = reports.length > 0;
   const allReportsApproved = hasReports && reports.every((r: any) => r.status === 'approved');
+  
   const canCheckOut = isStarted && allReportsApproved && trackingData?.check_in?.status === 'approved';
 
   const getReportBySlot = (slot: number) => reports.find((r: any) => r.slot === slot);
@@ -162,7 +186,7 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
      if (slot === 1) return "Main report file";
      if (slot === 2) return "Supporting file";
      return `Supporting file ${index}`; 
-  };
+   };
 
   const getFileIcon = (fileName: string) => {
      if (fileName.endsWith('.csv') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
@@ -177,6 +201,7 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
          <span>ACTION REQUIRED TODAY</span>
          <span>{assignment.audit_type}</span>
       </div>
+      
       <CardHeader className="bg-muted/5 border-b">
          <div className="flex justify-between items-start">
             <div>
@@ -190,6 +215,7 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
             </Button>
          </div>
       </CardHeader>
+      
       <CardContent className="space-y-8 pt-8">
          
          {/* 1. CHECK IN */}
@@ -204,11 +230,17 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
             
             {trackingData.check_in?.url ? (
                <div className="ml-11 space-y-3">
-                  <img 
-                     src={trackingData.check_in.url.startsWith('http') ? trackingData.check_in.url : `https://tcmtmznnjdqjmxetqvdq.supabase.co/storage/v1/object/public/kyc-documents/${trackingData.check_in.url}`} 
-                     alt="Check In Selfie" 
-                     className="h-48 w-auto rounded-lg border object-cover shadow-sm" 
-                  />
+                  {checkInPhotoUrl ? (
+                     <img
+                         src={checkInPhotoUrl}
+                         alt="Check In Selfie"
+                         className="h-48 w-auto rounded-lg border object-cover shadow-sm"
+                      />
+                  ) : (
+                     <div className="h-48 w-48 bg-muted animate-pulse rounded-lg border flex items-center justify-center text-xs text-muted-foreground">
+                        Loading image...
+                     </div>
+                  )}
                   
                   {trackingData.check_in.status === 'rejected' && (
                      <div className="space-y-3 max-w-md">
@@ -289,10 +321,10 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
                           )}
                           
                           {slot > 2 && (
-                             <button 
-                                onClick={() => handleRemoveSlot(slot)} 
-                                className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded-md hover:bg-destructive/10" 
-                                title="Remove this upload box"
+                             <button
+                                 onClick={() => handleRemoveSlot(slot)}
+                                 className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded-md hover:bg-destructive/10"
+                                 title="Remove this upload box"
                              >
                                 <Trash2 className="h-4 w-4" />
                              </button>
@@ -328,12 +360,12 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
                                 <span className="text-[10px] text-muted-foreground">PDF, Excel, CSV</span>
                              </div>
                           </Label>
-                          <input 
-                             id={`upload-${assignment.id}-${slot}`} 
-                             type="file" 
-                             accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                             className="hidden" 
-                             onChange={(e) => e.target.files?.[0] && handleReportUpload(e.target.files[0], slot)}
+                          <input
+                              id={`upload-${assignment.id}-${slot}`}
+                              type="file"
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                             className="hidden"
+                              onChange={(e) => e.target.files?.[0] && handleReportUpload(e.target.files[0], slot)}
                              disabled={uploading}
                           />
                        </div>
@@ -342,13 +374,13 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
                 );
               })}
             </div>
-
+            
             <div className="ml-11 mt-4">
-               <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="border-dashed" 
-                  onClick={handleAddSlot}
+               <Button
+                   variant="outline"
+                   size="sm"
+                   className="border-dashed"
+                   onClick={handleAddSlot}
                >
                   <Plus className="h-4 w-4 mr-2" />
                   Add more upload box
@@ -389,18 +421,17 @@ function LiveAssignmentCard({ assignment, user, onUpdate }: { assignment: any, u
                )}
                
                {!isCheckedOut && (
-                  <Button 
-                     size="lg" 
-                     className="w-full sm:w-auto bg-[#4338CA] hover:bg-[#4338CA]/90 font-bold" 
-                     disabled={!canCheckOut} 
-                     onClick={handleCheckOut}
+                  <Button
+                      size="lg"
+                      className="w-full sm:w-auto bg-[#4338CA] hover:bg-[#4338CA]/90 font-bold"
+                      disabled={!canCheckOut}
+                      onClick={handleCheckOut}
                   >
                      Submit Check Out
                   </Button>
                )}
             </div>
          </div>
-
       </CardContent>
     </Card>
   );
@@ -420,7 +451,7 @@ export default function MyAssignments() {
         .select('*')
         .eq('allotted_to', user?.id)
         .order('audit_date', { ascending: true });
-      
+        
       if (error) throw error;
       return data || [];
     },
@@ -436,17 +467,17 @@ export default function MyAssignments() {
 
   // Jobs that are allotted or in progress, and their date is today or in the past
   const liveAssignments = assignments.filter(a => 
-    ['allotted', 'in_progress'].includes(a.status) && 
-    a.audit_date <= todayStr
+     ['allotted', 'in_progress'].includes(a.status) &&
+     a.audit_date <= todayStr
   );
-  
+
   const upcomingAssignments = assignments.filter(a => 
-    a.audit_date > todayStr && 
-    !['completed', 'incomplete'].includes(a.status)
+     a.audit_date > todayStr &&
+     !['completed', 'incomplete'].includes(a.status)
   );
-  
+
   const pastCompletedAssignments = assignments.filter(a => 
-    ['completed', 'incomplete'].includes(a.status)
+     ['completed', 'incomplete'].includes(a.status)
   );
 
   if (isLoading) {
@@ -475,11 +506,11 @@ export default function MyAssignments() {
             <div className="grid gap-6">
               {liveAssignments.map((job) => (
                 <LiveAssignmentCard 
-                  key={job.id} 
-                  assignment={job} 
-                  user={user} 
-                  onUpdate={handleRefetch} 
-                />
+                   key={job.id} 
+                   assignment={job} 
+                   user={user} 
+                   onUpdate={handleRefetch} 
+                 />
               ))}
             </div>
           </div>
@@ -565,9 +596,9 @@ export default function MyAssignments() {
                 </div>
               )}
             </TabsContent>
-
           </Tabs>
         </div>
+
       </div>
     </DashboardLayout>
   );

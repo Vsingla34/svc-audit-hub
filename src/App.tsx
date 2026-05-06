@@ -5,7 +5,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { DashboardLayout } from "@/components/DashboardLayout";
 
 // 1. Eagerly loaded components
 import Auth from "./pages/Auth";
@@ -17,7 +16,8 @@ const AdminAssignmentsPage = lazy(() => import("./pages/admin/AdminAssignmentsPa
 const AdminApplicationsPage = lazy(() => import("./pages/admin/AdminApplicationsPage"));
 const AdminDeadlinesPage = lazy(() => import("./pages/admin/AdminDeadlinesPage"));
 const AdminReportsPage = lazy(() => import("./pages/admin/AdminReportsPage"));
-const AdminUsersPage = lazy(() => import("./pages/admin/AdminUsersPage"));
+const AdminVerifiedUsersPage = lazy(() => import("./pages/admin/AdminVerifiedUsersPage"));
+const AdminUnverifiedUsersPage = lazy(() => import("./pages/admin/AdminUnverifiedUsersPage"));
 
 // 3. Lazy loaded Auditor Pages
 const AuditorOverviewPage = lazy(() => import("./pages/auditor/AuditorOverviewPage"));
@@ -46,7 +46,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// A real loading screen — shown while auth initializes on first paint.
+// A real loading screen shown while auth initializes on first paint.
 // Kept minimal and instant so it never feels like a hang.
 const GlobalLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-white">
@@ -56,7 +56,6 @@ const GlobalLoader = () => (
     </div>
   </div>
 );
-
 
 const ProtectedRoute = ({
   children,
@@ -68,10 +67,10 @@ const ProtectedRoute = ({
   const { user, loading, userRole, isProfileComplete } = useAuth();
   const location = useLocation();
 
-  // Still initializing — render nothing, the shell's loader is already showing
+  // Still initializing - render nothing, the shell's loader is already showing
   if (loading) return null;
 
-  // Not logged in — send to auth, remembering where they wanted to go
+  // Not logged in - send to auth, remembering where they wanted to go
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
 
   const currentRole = (userRole || "auditor").toLowerCase();
@@ -86,7 +85,7 @@ const ProtectedRoute = ({
       return <Navigate to="/dashboard" replace />;
   }
 
-  // Auditor with incomplete profile — force setup first
+  // Auditor with incomplete profile - force setup first
   if (
     currentRole === "auditor" &&
     !isProfileComplete &&
@@ -98,23 +97,18 @@ const ProtectedRoute = ({
   return <>{children}</>;
 };
 
-
 const ProtectedShell = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
- 
   if (loading) return <GlobalLoader />;
 
-  // Auth resolved but no user — redirect to login
+  // Auth resolved but no user - redirect to login
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
 
-  // Auth resolved and user exists — render the full dashboard shell
-  return (
-    <DashboardLayout title="" navItems={[]} activeTab="">
-      <Outlet />
-    </DashboardLayout>
-  );
+  // Auth resolved and user exists - JUST render the Outlet
+  // (The individual pages will render their own DashboardLayout with the correct titles/tabs)
+  return <Outlet />;
 };
 
 function App() {
@@ -129,7 +123,6 @@ function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/auth" replace />} />
                 <Route path="/auth" element={<Auth />} />
-
                 
                 <Route element={<ProtectedShell />}>
                   <Route
@@ -140,20 +133,22 @@ function App() {
                       </ProtectedRoute>
                     }
                   />
-
                   <Route path="/admin/overview" element={<ProtectedRoute requiredRole="admin"><AdminOverviewPage /></ProtectedRoute>} />
                   <Route path="/admin/assignments" element={<ProtectedRoute requiredRole="admin"><AdminAssignmentsPage /></ProtectedRoute>} />
                   <Route path="/admin/applications" element={<ProtectedRoute requiredRole="admin"><AdminApplicationsPage /></ProtectedRoute>} />
                   <Route path="/admin/deadlines" element={<ProtectedRoute requiredRole="admin"><AdminDeadlinesPage /></ProtectedRoute>} />
                   <Route path="/admin/reports" element={<ProtectedRoute requiredRole="admin"><AdminReportsPage /></ProtectedRoute>} />
-                  <Route path="/admin/users" element={<ProtectedRoute requiredRole="admin"><AdminUsersPage /></ProtectedRoute>} />
+                  
+                  {/* SEPARATED USER ROUTES */}
+                  <Route path="/admin/users/verified" element={<ProtectedRoute requiredRole="admin"><AdminVerifiedUsersPage /></ProtectedRoute>} />
+                  <Route path="/admin/users/unverified" element={<ProtectedRoute requiredRole="admin"><AdminUnverifiedUsersPage /></ProtectedRoute>} />
 
                   <Route path="/auditor/overview" element={<ProtectedRoute requiredRole="auditor"><AuditorOverviewPage /></ProtectedRoute>} />
                   <Route path="/auditor/available-jobs" element={<ProtectedRoute requiredRole="auditor"><AuditorAvailableJobsPage /></ProtectedRoute>} />
                   <Route path="/auditor/assignments" element={<ProtectedRoute requiredRole="auditor"><AuditorMyAssignmentsPage /></ProtectedRoute>} />
                   <Route path="/auditor/applications" element={<ProtectedRoute requiredRole="auditor"><AuditorMyApplicationsPage /></ProtectedRoute>} />
                   <Route path="/auditor/analytics" element={<ProtectedRoute requiredRole="auditor"><AuditorAnalyticsPage /></ProtectedRoute>} />
-
+                  
                   <Route path="/profile-setup" element={<ProtectedRoute><AuditorProfileSetup /></ProtectedRoute>} />
                   <Route path="/profile-edit" element={<ProtectedRoute><ProfileEdit /></ProtectedRoute>} />
                   <Route path="/bank-kyc" element={<ProtectedRoute><BankKycDetails /></ProtectedRoute>} />
@@ -161,7 +156,6 @@ function App() {
                   <Route path="/map" element={<ProtectedRoute><MapView /></ProtectedRoute>} />
                   <Route path="/assignment/:id" element={<ProtectedRoute><AssignmentDetail /></ProtectedRoute>} />
                 </Route>
-
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
