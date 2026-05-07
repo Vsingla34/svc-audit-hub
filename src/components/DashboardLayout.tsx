@@ -8,7 +8,6 @@ import {
   FileText,
   Clock,
   ShieldCheck,
-  ShieldAlert,
   MapPin,
   CreditCard,
   User,
@@ -16,7 +15,8 @@ import {
   Menu,
   X,
   BarChart,
-  CheckSquare
+  CheckSquare,
+  Users
 } from 'lucide-react';
 
 // --- NAVIGATION CONFIGURATIONS ---
@@ -28,9 +28,8 @@ export const adminNavItems = [
   { title: 'Deadlines', href: '/admin/deadlines', icon: Clock, tabValue: 'deadlines' },
   { title: 'Live Reports', href: '/admin/reports', icon: FileText, tabValue: 'reports' },
   
-  // SEPARATED USER ROUTES
-  { title: 'Verified Auditors', href: '/admin/users/verified', icon: ShieldCheck, tabValue: 'verified-users' },
-  { title: 'Pending / Unverified', href: '/admin/users/unverified', icon: ShieldAlert, tabValue: 'unverified-users' },
+  // UNIFIED DIRECTORY LINK
+  { title: 'Auditor Directory', href: '/admin/users', icon: Users, tabValue: 'users' },
   
   { title: 'Finance & Payments', href: '/payments', icon: CreditCard, tabValue: 'payments' },
   { title: 'Map View', href: '/map', icon: MapPin, tabValue: 'map-view' },
@@ -96,14 +95,12 @@ export function DashboardLayout({ title, navItems, activeTab, children }: Dashbo
           </button>
         </div>
 
-        {/* HIDING SCROLLBAR HERE WITH TAILWIND ARBITRARY VARIANTS */}
         <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <div className="mb-4 px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
             {userRole === 'admin' ? 'Admin Panel' : 'Auditor Portal'}
           </div>
           
           {navItems.map((item) => {
-            // Check if the current route matches the nav item
             const isActive = activeTab === item.tabValue || location.pathname.includes(item.href);
             
             return (

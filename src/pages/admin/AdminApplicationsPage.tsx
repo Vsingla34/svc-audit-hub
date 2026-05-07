@@ -30,7 +30,7 @@ export default function AdminApplicationsPage() {
   const [selectedKycAuditor, setSelectedKycAuditor] = useState<any>(null);
   const [reviewType, setReviewType] = useState<'Profile' | 'Bank' | null>(null);
 
-  // FEATURE 2: Reallocate State
+  // Reallocate State
   const [reallocateDialog, setReallocateDialog] = useState(false);
   const [activeAssignmentForRealloc, setActiveAssignmentForRealloc] = useState<any>(null);
 
@@ -54,7 +54,6 @@ export default function AdminApplicationsPage() {
           assignment: Array.isArray(app.assignment) ? app.assignment[0] : (app.assignment || {}),
           auditor: Array.isArray(app.auditor) ? app.auditor[0] : (app.auditor || {})
         })).filter(app => 
-            // Only show Open assignments (with pending apps) OR Allotted assignments (so we can change auditor)
           ['open', 'allotted'].includes(app.assignment.status) &&
           (app.assignment.status === 'allotted' || app.status === 'pending')
         );
@@ -106,8 +105,7 @@ export default function AdminApplicationsPage() {
       const updatePayload: any = {};
       const safeData = pendingData ? { ...pendingData } : {};
 
-      // --- SANITIZATION BLOCK ---
-      // Fix for previously corrupted draft data where booleans/numbers were saved as empty strings
+      // SANITIZATION
       Object.keys(safeData).forEach(key => {
         if (safeData[key] === "") {
           if (key.startsWith('has_') || key.includes('laptop') || key.includes('smartphone') || key.includes('bike')) {
@@ -115,28 +113,33 @@ export default function AdminApplicationsPage() {
           } else if (key.includes('count') || key.includes('years') || key.includes('radius')) {
             safeData[key] = 0;
           } else {
-            safeData[key] = null; // Use null for empty strings on text/url fields to be safe with DB schema
+            safeData[key] = null; 
           }
         }
       });
-      // --------------------------
 
       if (type === 'Profile') {
         if (action === 'approve') {
           Object.assign(updatePayload, safeData); 
           updatePayload.profile_status = 'approved';
-          await supabase.from('profiles').update({ role: 'auditor' }).eq('id', userId);
+          const { error: roleErr } = await supabase.from('profiles').update({ role: 'auditor' }).eq('id', userId);
+          if (roleErr) throw new Error("Failed to update user role: " + roleErr.message);
         } else {
           updatePayload.profile_status = 'rejected';
         }
-        updatePayload.pending_profile_data = null; // Use null to clear the draft securely
+        updatePayload.pending_profile_data = null; 
       } else {
         if (action === 'approve') {
-          const { data: existingBank } = await supabase.from('bank_kyc_details').select('id').eq('user_id', userId).maybeSingle();
+          // CRITICAL SAFETY CHECK: Fetch, verify, and aggressively catch insert/update failures!
+          const { data: existingBank, error: fetchErr } = await supabase.from('bank_kyc_details').select('id').eq('user_id', userId).maybeSingle();
+          if (fetchErr) throw new Error("Failed to check existing bank records: " + fetchErr.message);
+
           if (existingBank) {
-             await supabase.from('bank_kyc_details').update(safeData).eq('user_id', userId);
+             const { error: updateErr } = await supabase.from('bank_kyc_details').update(safeData).eq('user_id', userId);
+             if (updateErr) throw new Error("Database rejected Bank Update (RLS or Constraint): " + updateErr.message);
           } else {
-             await supabase.from('bank_kyc_details').insert({ user_id: userId, ...safeData });
+             const { error: insertErr } = await supabase.from('bank_kyc_details').insert({ user_id: userId, ...safeData });
+             if (insertErr) throw new Error("Database rejected Bank Insert (RLS or Constraint): " + insertErr.message);
           }
           updatePayload.bank_status = 'approved';
         } else {
@@ -145,12 +148,13 @@ export default function AdminApplicationsPage() {
         updatePayload.pending_bank_data = null; 
       }
 
-      const { error } = await supabase
+      // Finally, commit the status change if and ONLY IF the insert/updates above succeeded
+      const { error: finalErr } = await supabase
         .from('auditor_profiles')
         .update(updatePayload)
         .eq('id', id);
 
-      if (error) throw error;
+      if (finalErr) throw new Error("Failed to finalize status update: " + finalErr.message);
     },
     onSuccess: (_, variables) => {
       toast.success(`${variables.type} changes ${variables.action}d successfully.`);
@@ -268,12 +272,12 @@ export default function AdminApplicationsPage() {
     } catch (error: any) { toast.error(error.message); }
   };
 
-  // --- FEATURE 3: REJECT ALL & REOPEN ---
+  // --- FEATURE: REJECT ALL & REOPEN ---
   const handleRejectAllAndReopen = async (assignmentId: string) => {
     if (!window.confirm("Are you sure you want to reject all applicants and put this assignment back on the job board?")) return;
     try {
       await supabase.from('applications').update({ status: 'rejected' }).eq('assignment_id', assignmentId);
-      await supabase.from('assignments').update({ applicant_count: 0 }).eq('id', assignmentId); // Resets counter!
+      await supabase.from('assignments').update({ applicant_count: 0 }).eq('id', assignmentId); 
       toast.success("All applications rejected. Assignment is back on the job board!");
       fetchJobApplications();
     } catch (error: any) {
@@ -281,23 +285,20 @@ export default function AdminApplicationsPage() {
     }
   };
 
-  // --- FEATURE 2: REALLOCATE (CHANGE AUDITOR) ---
+  // --- FEATURE: REALLOCATE (CHANGE AUDITOR) ---
   const handleChangeAuditor = async (newApplicationId: string, newAuditorId: string) => {
     if (!activeAssignmentForRealloc) return;
     try {
-      // Reject old application
       const oldApplication = activeAssignmentForRealloc.applicants.find((a: any) => a.status === 'accepted');
       if (oldApplication) {
         await supabase.from('applications').update({ status: 'rejected' }).eq('id', oldApplication.id);
       }
       
-      // Accept new application
       await supabase.from('applications').update({ status: 'accepted' }).eq('id', newApplicationId);
       
-      // Update assignment and clear old tracking
       await supabase.from('assignments').update({ 
         allotted_to: newAuditorId,
-        tracking_details: null // Safe wipe
+        tracking_details: null 
       } as any).eq('id', activeAssignmentForRealloc.id);
 
       toast.success("Auditor changed successfully!");
@@ -397,13 +398,11 @@ export default function AdminApplicationsPage() {
                         </div>
                         <div className="flex flex-col items-end gap-2">
                            <Badge variant="outline" className="bg-background">{group.applicants.length} / 5 Applicants</Badge>
-                           {/* Reject All Button */}
                            {!isAllotted && (
                              <Button size="sm" variant="destructive" className="h-8" onClick={() => handleRejectAllAndReopen(assignmentId)}>
                                 <UserX className="h-3.5 w-3.5 mr-1.5" /> Reject All & Reopen
                              </Button>
                            )}
-                           {/* Change Auditor Button */}
                            {isAllotted && group.applicants.length > 1 && (
                              <Button variant="outline" size="sm" onClick={() => { setActiveAssignmentForRealloc({...group, id: assignmentId}); setReallocateDialog(true); }}>
                                 <ArrowRightLeft className="h-4 w-4 mr-2 text-primary" /> Change Auditor
@@ -414,7 +413,6 @@ export default function AdminApplicationsPage() {
                     </CardHeader>
                     <CardContent className="p-0">
                       {isAllotted ? (
-                        // ALLOTTED VIEW - Show the chosen auditor
                         (() => {
                            const allottedApp = group.applicants.find(a => a.status === 'accepted');
                            if (!allottedApp) return <div className="p-6 text-destructive italic">Error: Auditor data missing</div>;
@@ -447,7 +445,6 @@ export default function AdminApplicationsPage() {
                            );
                         })()
                       ) : (
-                        // PENDING VIEW - List all applicants to choose from
                         <Table>
                           <TableHeader>
                             <TableRow className="bg-muted/5 hover:bg-muted/5">
