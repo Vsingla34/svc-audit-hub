@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label'; // <-- FIXED: Added missing Label import
+import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Loader2, ShieldAlert, Eye, MapPin, Star, 
   Briefcase, Mail, Phone, User, FileText, ExternalLink, 
-  Landmark, CheckCircle2, Users, Search, Send
+  Landmark, CheckCircle2, Users, Search, Send, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -66,11 +66,15 @@ export function UserRoleManagement() {
   const [emailBody, setEmailBody] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
 
-  // Reset pagination and selections when tab or search changes
+  // Reset pagination when tab or search changes
   useEffect(() => {
     setVisibleCount(50);
-    setSelectedUserIds(new Set()); // Clear selections on filter change
   }, [activeTab, searchQuery]);
+
+  // Clear selections ONLY when changing main tabs, NOT when searching!
+  useEffect(() => {
+    setSelectedUserIds(new Set()); 
+  }, [activeTab]);
 
   // Fetch only lightweight profile data in bulk for extreme performance
   const { data: allUsers = [], isLoading } = useQuery({
@@ -203,15 +207,20 @@ export function UserRoleManagement() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedUserIds.size === displayedUsers.length) {
-      // If all currently visible are selected, clear selection
-      setSelectedUserIds(new Set());
-    } else {
-      // Otherwise, select all currently visible users
-      const newSet = new Set<string>();
-      displayedUsers.forEach(u => newSet.add(u.id));
-      setSelectedUserIds(newSet);
-    }
+    const displayedIds = displayedUsers.map(u => u.id);
+    const allDisplayedSelected = displayedIds.every(id => selectedUserIds.has(id));
+
+    setSelectedUserIds(prev => {
+      const newSet = new Set(prev);
+      if (allDisplayedSelected) {
+        // If all currently visible are selected, unselect them
+        displayedIds.forEach(id => newSet.delete(id));
+      } else {
+        // Otherwise, add all currently visible to the selection
+        displayedIds.forEach(id => newSet.add(id));
+      }
+      return newSet;
+    });
   };
 
   // --- EMAIL SENDING LOGIC (SUPABASE EDGE FUNCTIONS) ---
@@ -234,7 +243,6 @@ export function UserRoleManagement() {
     const toastId = toast.loading(`Sending email to ${recipientEmails.length} users...`);
 
     try {
-      // This calls a Supabase Edge Function to securely send the emails
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: {
           to: recipientEmails,
@@ -249,7 +257,7 @@ export function UserRoleManagement() {
       setEmailDialogOpen(false);
       setEmailSubject('');
       setEmailBody('');
-      setSelectedUserIds(new Set());
+      setSelectedUserIds(new Set()); // Reset selections after sending
     } catch (error: any) {
       toast.error(`Failed to send emails: ${error.message}`, { id: toastId });
       console.error("Email Error:", error);
@@ -299,6 +307,34 @@ export function UserRoleManagement() {
 
   return (
     <>
+      {/* FLOATING ACTION BAR FOR BULK EMAIL */}
+      {selectedUserIds.size > 0 && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 flex items-center gap-4 bg-white/95 backdrop-blur-md px-6 py-4 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-gray-200">
+          <div className="flex items-center gap-2 border-r border-gray-200 pr-4">
+            <Badge className="bg-[#4338CA] text-white hover:bg-[#4338CA] text-sm px-2.5">{selectedUserIds.size}</Badge>
+            <span className="font-semibold text-sm text-gray-700">Selected</span>
+          </div>
+          
+          <Button 
+            onClick={() => setEmailDialogOpen(true)}
+            className="bg-[#4338CA] hover:bg-[#4338CA]/90 text-white shadow-sm rounded-full px-6"
+          >
+            <Mail className="h-4 w-4 mr-2" />
+            Compose Email
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="rounded-full text-muted-foreground hover:bg-gray-100 h-8 w-8 p-0 ml-1"
+            onClick={() => setSelectedUserIds(new Set())}
+            title="Clear Selection"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
       {/* FILTER TABS */}
       <Tabs defaultValue="all" onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full sm:max-w-[700px] grid-cols-4 h-12 shadow-sm">
@@ -325,17 +361,6 @@ export function UserRoleManagement() {
             </div>
             
             <div className="flex items-center gap-3 w-full md:w-auto">
-              {/* BULK ACTION BUTTON */}
-              {selectedUserIds.size > 0 && (
-                <Button 
-                  onClick={() => setEmailDialogOpen(true)}
-                  className="bg-[#4338CA] hover:bg-[#4338CA]/90 text-white shadow-sm animate-in fade-in"
-                >
-                  <Mail className="h-4 w-4 mr-2" />
-                  Email Selected ({selectedUserIds.size})
-                </Button>
-              )}
-
               {/* OPTIMIZED SEARCH BAR */}
               <div className="relative w-full md:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -365,7 +390,7 @@ export function UserRoleManagement() {
                 <TableRow className="bg-muted/30">
                   <TableHead className="w-12 text-center">
                     <Checkbox 
-                      checked={displayedUsers.length > 0 && selectedUserIds.size === displayedUsers.length}
+                      checked={displayedUsers.length > 0 && displayedUsers.every(u => selectedUserIds.has(u.id))}
                       onCheckedChange={toggleSelectAll}
                       aria-label="Select all visible users"
                     />
