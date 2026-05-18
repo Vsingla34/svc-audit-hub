@@ -5,7 +5,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
-// ── Shared SW registration helper ─────────────────────────────────────────────
 async function getSwRegistration(): Promise<ServiceWorkerRegistration> {
   await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
     scope: '/',
@@ -17,9 +16,11 @@ async function getSwRegistration(): Promise<ServiceWorkerRegistration> {
 export function usePushNotifications() {
   const { user } = useAuth();
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
-  const hasFetchedRef = useRef(false);
+  
+  // 🔥 FIX: Track the actual User ID, not just a true/false boolean
+  // This ensures that if you log out and log into a different account, it forces a resync!
+  const syncedUserRef = useRef<string | null>(null);
 
-  // ── On mount: read current permission and auto-sync token if already granted
   useEffect(() => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       setPermissionStatus('unsupported');
@@ -27,16 +28,15 @@ export function usePushNotifications() {
     }
     setPermissionStatus(Notification.permission);
 
-    if (Notification.permission === 'granted' && user && !hasFetchedRef.current) {
-      hasFetchedRef.current = true;
+    // 🔥 FIX: Check if the current user ID matches the one we already synced
+    if (Notification.permission === 'granted' && user && syncedUserRef.current !== user.id) {
+      syncedUserRef.current = user.id;
       syncToken();
     }
   }, [user]);
 
-  // ── Save/refresh the FCM token in Supabase ────────────────────────────────
   const syncToken = async () => {
     try {
-      // 🔥 FIX: Await the messaging instance!
       const msg = await messaging();
       if (!msg) return;
       
@@ -44,27 +44,23 @@ export function usePushNotifications() {
       if (!vapidKey) { console.error('VITE_FIREBASE_VAPID_KEY missing'); return; }
 
       const reg = await getSwRegistration();
-      
-      // 🔥 FIX: Pass the awaited 'msg' object, not the function!
       const token = await getToken(msg, { vapidKey, serviceWorkerRegistration: reg });
 
       if (token && user) {
         const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
         if (error) console.error('Error saving FCM token:', error);
-        else console.log('🎉 [FCM] Token synced successfully to database on login!');
+        else console.log('🎉 [FCM] Token synced successfully for user:', user.id);
       }
     } catch (err) {
       console.error('[FCM] syncToken failed:', err);
     }
   };
 
-  // ── Ask for permission then save token ────────────────────────────────────
   const requestPermissionAndGetToken = async () => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       toast.error('Your browser does not support push notifications.'); return;
     }
     
-    // 🔥 FIX: Await the messaging instance!
     const msg = await messaging();
     if (!msg) {
       toast.error('Notification service failed to initialize.'); return;
@@ -81,13 +77,14 @@ export function usePushNotifications() {
     if (permission === 'granted') {
       try {
         const reg = await getSwRegistration();
-        
-        // 🔥 FIX: Pass the awaited 'msg' object!
         const token = await getToken(msg, { vapidKey, serviceWorkerRegistration: reg });
 
         if (token && user) {
           const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
           if (error) { toast.error('Failed to save notification token.'); return; }
+          
+          // Force update the ref so it doesn't double-sync later
+          syncedUserRef.current = user.id;
           toast.success('Notifications enabled!');
         } else {
           toast.error('Could not get notification token. Try again.');
@@ -101,17 +98,12 @@ export function usePushNotifications() {
     }
   };
 
-  // ── Foreground message handler ────────────────────────────────────────────
   useEffect(() => {
     const setupForegroundListener = async () => {
-      // 🔥 FIX: Await the messaging instance!
       const msg = await messaging();
       if (!msg) return;
 
-      // 🔥 FIX: Pass the awaited 'msg' object!
       return onMessage(msg, async (payload) => {
-        console.log('[App] Foreground FCM message:', payload);
-
         const title = payload.notification?.title || payload.data?.title || 'New Update';
         const body = payload.notification?.body || payload.data?.body || '';
         const assignmentId = payload.data?.assignment_id;
@@ -119,7 +111,6 @@ export function usePushNotifications() {
 
         try {
           const reg = await navigator.serviceWorker.ready;
-
           if (reg.active) {
             reg.active.postMessage({
               type: 'SHOW_NOTIFICATION',
