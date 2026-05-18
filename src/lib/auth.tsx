@@ -130,12 +130,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!isInitialized.current) return;
 
       if (event === 'SIGNED_IN') {
-        // THE PERMANENT FIX:
-        // By checking the ref instead of the state, we know exactly if the user was 
-        // already logged in before the phone went to sleep.
         const isBackgroundReconnect = !!activeSessionRef.current;
         
-        // Only show loading spinner if it's a BRAND NEW login
         if (!isBackgroundReconnect) setLoading(true);
         
         setSession(currentSession);
@@ -175,18 +171,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = async () => {
     try {
+      // 🔥 NEW FEATURE: Wipe the FCM token before signing out
+      // This ensures notifications stop being sent to this device/browser immediately
+      if (user) {
+        const { error: tokenError } = await supabase
+          .from('profiles')
+          .update({ fcm_token: null })
+          .eq('id', user.id);
+          
+        if (tokenError) {
+          console.error("Failed to clear FCM token on logout:", tokenError);
+        } else {
+          console.log('✅ FCM Token wiped securely on logout.');
+        }
+      }
+
       setUser(null); setSession(null); setUserRole(null); setIsProfileComplete(false);
       activeSessionRef.current = null;
+      
       await Promise.race([
         supabase.auth.signOut({ scope: 'local' }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("signOut timed out")), 3000)),
       ]);
     } catch (error) {
+      console.error("Error during sign out:", error);
     } finally {
       Object.keys(localStorage).forEach((key) => { if (key.startsWith('sb-')) localStorage.removeItem(key); });
       navigate("/auth", { replace: true });
     }
   };
+
   return (
     <AuthContext.Provider value={{ user, session, loading, userRole, isProfileComplete, signOut }}>
       {children}
