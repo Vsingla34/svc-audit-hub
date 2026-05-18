@@ -3,17 +3,21 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { DashboardLayout, auditorNavItems } from '@/components/DashboardLayout';
-import { Briefcase, Clock, CheckCircle, AlertCircle, Landmark, UserCheck, Loader2 } from 'lucide-react';
+import { Briefcase, Clock, CheckCircle, AlertCircle, Landmark, UserCheck, Loader2, BellRing } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { AuditorAnalytics } from '@/components/AuditorAnalytics';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 
 export default function AuditorOverviewPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  
+  // 1. Initialize Push Notifications Hook
+  const { requestPermissionAndGetToken, permissionStatus } = usePushNotifications();
 
-  // 1. Fetch Profile
+  // 2. Fetch Profile
   const { data: profile, isLoading: loadingProfile } = useQuery({
     queryKey: ['auditor-profile', user?.id],
     queryFn: async () => {
@@ -28,7 +32,7 @@ export default function AuditorOverviewPage() {
     staleTime: 0, 
   });
 
-  // 2. Fetch Available Jobs
+  // 3. Fetch Available Jobs
   const { data: availableJobs = [], isLoading: loadingJobs } = useQuery({
     queryKey: ['available-jobs', user?.id, profile?.base_state], 
     queryFn: async () => {
@@ -46,7 +50,7 @@ export default function AuditorOverviewPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // 3. Fetch Applications
+  // 4. Fetch Applications
   const { data: applications = [], isLoading: loadingApps } = useQuery({
     queryKey: ['auditor-applications', user?.id],
     queryFn: async () => {
@@ -61,7 +65,7 @@ export default function AuditorOverviewPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  // 4. Fetch Active Assignments
+  // 5. Fetch Active Assignments
   const { data: assignments = [], isLoading: loadingAssignments } = useQuery({
     queryKey: ['auditor-assignments', user?.id],
     queryFn: async () => {
@@ -90,6 +94,21 @@ export default function AuditorOverviewPage() {
     <DashboardLayout title="Auditor Dashboard" navItems={auditorNavItems} activeTab="overview">
       <div className="space-y-8 max-w-7xl mx-auto py-6">
         
+        {/* --- PUSH NOTIFICATION PROMPT --- */}
+        {permissionStatus === 'default' && (
+          <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500 shadow-sm">
+            <div>
+              <h3 className="font-bold text-indigo-900 flex items-center gap-2">
+                <BellRing className="h-5 w-5 text-indigo-600" /> Enable Assignment Alerts
+              </h3>
+              <p className="text-sm text-indigo-700 mt-1">Get instantly notified on your phone when a new audit is available in your area.</p>
+            </div>
+            <Button onClick={requestPermissionAndGetToken} className="bg-indigo-600 hover:bg-indigo-700 text-white shrink-0">
+              Allow Notifications
+            </Button>
+          </div>
+        )}
+
         {/* Only show alerts AFTER the profile data has finished loading */}
         {!loadingProfile && (
           <div className="space-y-4 animate-in fade-in duration-500">
