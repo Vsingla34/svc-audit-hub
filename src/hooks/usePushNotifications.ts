@@ -6,8 +6,6 @@ import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 
 // ── Shared SW registration helper ─────────────────────────────────────────────
-// Always registers with updateViaCache: 'none' so the browser never serves a
-// stale SW file from HTTP cache. Returns the ready registration.
 async function getSwRegistration(): Promise<ServiceWorkerRegistration> {
   await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
     scope: '/',
@@ -38,19 +36,22 @@ export function usePushNotifications() {
   // ── Save/refresh the FCM token in Supabase ────────────────────────────────
   const syncToken = async () => {
     try {
-      if (!messaging) return;
+      // 🔥 FIX: Await the messaging instance!
+      const msg = await messaging();
+      if (!msg) return;
       
-      // 🔥 Corrected variable name to match your .env setup
       const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
       if (!vapidKey) { console.error('VITE_FIREBASE_VAPID_KEY missing'); return; }
 
-      const reg   = await getSwRegistration();
-      const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+      const reg = await getSwRegistration();
+      
+      // 🔥 FIX: Pass the awaited 'msg' object, not the function!
+      const token = await getToken(msg, { vapidKey, serviceWorkerRegistration: reg });
 
       if (token && user) {
         const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
         if (error) console.error('Error saving FCM token:', error);
-        else console.log('[FCM] Token synced successfully to database!');
+        else console.log('🎉 [FCM] Token synced successfully to database on login!');
       }
     } catch (err) {
       console.error('[FCM] syncToken failed:', err);
@@ -62,11 +63,13 @@ export function usePushNotifications() {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) {
       toast.error('Your browser does not support push notifications.'); return;
     }
-    if (!messaging) {
+    
+    // 🔥 FIX: Await the messaging instance!
+    const msg = await messaging();
+    if (!msg) {
       toast.error('Notification service failed to initialize.'); return;
     }
     
-    // 🔥 Corrected variable name to match your .env setup
     const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
     if (!vapidKey) {
       toast.error('Notification configuration is missing.'); return;
@@ -77,8 +80,10 @@ export function usePushNotifications() {
 
     if (permission === 'granted') {
       try {
-        const reg   = await getSwRegistration();
-        const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+        const reg = await getSwRegistration();
+        
+        // 🔥 FIX: Pass the awaited 'msg' object!
+        const token = await getToken(msg, { vapidKey, serviceWorkerRegistration: reg });
 
         if (token && user) {
           const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
@@ -98,43 +103,55 @@ export function usePushNotifications() {
 
   // ── Foreground message handler ────────────────────────────────────────────
   useEffect(() => {
-    if (!messaging) return;
+    const setupForegroundListener = async () => {
+      // 🔥 FIX: Await the messaging instance!
+      const msg = await messaging();
+      if (!msg) return;
 
-    const unsubscribe = onMessage(messaging, async (payload) => {
-      console.log('[App] Foreground FCM message:', payload);
+      // 🔥 FIX: Pass the awaited 'msg' object!
+      return onMessage(msg, async (payload) => {
+        console.log('[App] Foreground FCM message:', payload);
 
-      const title        = payload.notification?.title || payload.data?.title || 'New Update';
-      const body         = payload.notification?.body  || payload.data?.body  || '';
-      const assignmentId = payload.data?.assignment_id;
-      const targetUrl    = assignmentId ? `/assignment/${assignmentId}` : '/';
+        const title = payload.notification?.title || payload.data?.title || 'New Update';
+        const body = payload.notification?.body || payload.data?.body || '';
+        const assignmentId = payload.data?.assignment_id;
+        const targetUrl = assignmentId ? `/assignment/${assignmentId}` : '/';
 
-      try {
-        const reg = await navigator.serviceWorker.ready;
+        try {
+          const reg = await navigator.serviceWorker.ready;
 
-        if (reg.active) {
-          reg.active.postMessage({
-            type: 'SHOW_NOTIFICATION',
-            payload: { title, body, url: targetUrl, assignmentId },
-          });
-        } else {
-          if (Notification.permission === 'granted') {
-            new Notification(title, { body, icon: '/favicon.ico' });
+          if (reg.active) {
+            reg.active.postMessage({
+              type: 'SHOW_NOTIFICATION',
+              payload: { title, body, url: targetUrl, assignmentId },
+            });
+          } else {
+            if (Notification.permission === 'granted') {
+              new Notification(title, { body, icon: '/favicon.ico' });
+            }
           }
+        } catch (err) {
+          console.error('[App] Failed to route notification through SW:', err);
         }
-      } catch (err) {
-        console.error('[App] Failed to route notification through SW:', err);
-      }
 
-      toast(title, {
-        description: body,
-        action: assignmentId
-          ? { label: 'View', onClick: () => (window.location.href = targetUrl) }
-          : undefined,
-        duration: 6000,
+        toast(title, {
+          description: body,
+          action: assignmentId
+            ? { label: 'View', onClick: () => (window.location.href = targetUrl) }
+            : undefined,
+          duration: 6000,
+        });
       });
+    };
+
+    let unsubscribe: any;
+    setupForegroundListener().then((unsub) => {
+      unsubscribe = unsub;
     });
 
-    return () => unsubscribe();
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   return { requestPermissionAndGetToken, permissionStatus };
