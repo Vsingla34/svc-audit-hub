@@ -39,8 +39,10 @@ export function usePushNotifications() {
   const syncToken = async () => {
     try {
       if (!messaging) return;
-      const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
-      if (!vapidKey) { console.error('VITE_FIREBASE_KEY missing'); return; }
+      
+      // 🔥 Corrected variable name to match your .env setup
+      const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+      if (!vapidKey) { console.error('VITE_FIREBASE_VAPID_KEY missing'); return; }
 
       const reg   = await getSwRegistration();
       const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
@@ -48,7 +50,7 @@ export function usePushNotifications() {
       if (token && user) {
         const { error } = await supabase.from('profiles').update({ fcm_token: token }).eq('id', user.id);
         if (error) console.error('Error saving FCM token:', error);
-        else console.log('[FCM] Token synced');
+        else console.log('[FCM] Token synced successfully to database!');
       }
     } catch (err) {
       console.error('[FCM] syncToken failed:', err);
@@ -63,7 +65,9 @@ export function usePushNotifications() {
     if (!messaging) {
       toast.error('Notification service failed to initialize.'); return;
     }
-    const vapidKey = import.meta.env.VITE_FIREBASE_KEY;
+    
+    // 🔥 Corrected variable name to match your .env setup
+    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
     if (!vapidKey) {
       toast.error('Notification configuration is missing.'); return;
     }
@@ -93,13 +97,6 @@ export function usePushNotifications() {
   };
 
   // ── Foreground message handler ────────────────────────────────────────────
-  // When the page IS focused, FCM does NOT show a system notification itself.
-  // We must tell the SW to call showNotification() because:
-  //   • Chrome Android blocks new Notification() from page context when foregrounded
-  //   • Only SW-context showNotification() reliably appears in the system tray
-  //
-  // The SW's message handler uses event.waitUntil() to stay alive — this was
-  // the missing piece causing silent failures on Android.
   useEffect(() => {
     if (!messaging) return;
 
@@ -111,7 +108,6 @@ export function usePushNotifications() {
       const assignmentId = payload.data?.assignment_id;
       const targetUrl    = assignmentId ? `/assignment/${assignmentId}` : '/';
 
-      // ── Route through SW so Android shows a real system notification ──────
       try {
         const reg = await navigator.serviceWorker.ready;
 
@@ -121,7 +117,6 @@ export function usePushNotifications() {
             payload: { title, body, url: targetUrl, assignmentId },
           });
         } else {
-          // Fallback for desktop browsers where SW may not be active yet
           if (Notification.permission === 'granted') {
             new Notification(title, { body, icon: '/favicon.ico' });
           }
@@ -130,7 +125,6 @@ export function usePushNotifications() {
         console.error('[App] Failed to route notification through SW:', err);
       }
 
-      // ── Always show in-app toast as well ──────────────────────────────────
       toast(title, {
         description: body,
         action: assignmentId

@@ -75,7 +75,7 @@ export function CreateAssignmentDialog({ onAssignmentCreated }: { onAssignmentCr
     setFormData({ ...formData, audit_type: value });
   };
 
-const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       toast.error("You must be logged in to create an assignment.");
@@ -127,15 +127,12 @@ const handleSubmit = async (e: React.FormEvent) => {
 
       if (error) throw error;
 
-      // --- NEW NOTIFICATION LOGIC START ---
-      
-      // 2. Find all eligible auditors in this state
+      // 2. IN-APP NOTIFICATIONS (Updates the web bell icon)
       const { data: auditors } = await supabase
         .from('auditor_profiles')
         .select('user_id')
         .eq('base_state', formData.state);
 
-      // 3. If we found auditors, insert a notification for each of them
       if (auditors && auditors.length > 0) {
         const notificationsToInsert = auditors.map(auditor => ({
           user_id: auditor.user_id,
@@ -145,17 +142,28 @@ const handleSubmit = async (e: React.FormEvent) => {
           related_assignment_id: newAssignment.id
         }));
 
-        // Insert into the notifications table to trigger the Webhook -> Vercel -> Firebase Push!
         const { error: notifError } = await supabase
           .from('notifications')
           .insert(notificationsToInsert);
           
         if (notifError) {
-          console.error("Warning: Assignment created, but failed to send notifications:", notifError);
+          console.error("Warning: Assignment created, but failed to insert in-app notifications:", notifError);
         }
       }
       
-      // --- NEW NOTIFICATION LOGIC END ---
+      // 3. TARGETED PUSH NOTIFICATIONS (Triggers the Edge Function to ping phones)
+      // We don't await this so it processes silently in the background and doesn't freeze the Admin UI
+      supabase.functions.invoke('send-assignment-notification', {
+        body: {
+          city: formData.city,
+          state: formData.state,
+          clientName: formData.client_name, 
+          auditType: formData.audit_type
+        }
+      }).then(({ data, error }) => {
+         if (error) console.error("Push Notification Edge Function failed:", error);
+         else console.log("Push Broadcast successful:", data);
+      });
 
       toast.success("Assignment created & notifications sent!");
       setOpen(false);
@@ -361,5 +369,4 @@ const handleSubmit = async (e: React.FormEvent) => {
       </DialogContent>
     </Dialog>
   );
-  
 }

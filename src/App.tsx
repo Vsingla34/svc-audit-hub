@@ -6,6 +6,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
 
+// 🔥 Added the import for the Push Notifications hook
+import { usePushNotifications } from "./hooks/usePushNotifications";
+
 // 1. Eagerly loaded components
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -95,6 +98,10 @@ const ProtectedRoute = ({
 const ProtectedShell = () => {
   const { user, loading } = useAuth();
   const location = useLocation();
+
+  // 🔥 TRIGGER THE HOOK HERE
+  // This silently checks permission and saves the token to Supabase
+  usePushNotifications();
 
   if (loading) return <GlobalLoader />;
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;

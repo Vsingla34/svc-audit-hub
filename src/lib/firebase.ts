@@ -1,8 +1,7 @@
-import { initializeApp } from "firebase/app";
-import { getMessaging } from "firebase/messaging";
+import { initializeApp } from 'firebase/app';
+import { getMessaging, isSupported } from 'firebase/messaging';
 
-// Securely pull config from environment variables
-export const firebaseConfig = {
+const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -12,8 +11,13 @@ export const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-// Initialize Firebase
-export const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 
-// Initialize Cloud Messaging and export it
-export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
+// Only initialize messaging if the browser supports it (prevents crashes on Safari/iOS)
+export const messaging = async () => {
+  const supported = await isSupported();
+  if (supported) {
+    return getMessaging(app);
+  }
+  return null;
+};
