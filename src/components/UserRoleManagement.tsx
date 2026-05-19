@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,24 +10,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Loader2, ShieldAlert, Eye, MapPin, Star, 
   Briefcase, Mail, Phone, User, FileText, ExternalLink, 
-  Landmark, CheckCircle2, Users, Search, Send, X
+  Landmark, CheckCircle2, Users, Search, Send, X, Filter
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Helper Component: Instantly resolves the public URL for bucket files
 function PublicFileLink({ path, label = "View Document" }: { path: string | null, label?: string }) {
   if (!path) return <span className="text-xs text-muted-foreground italic">Not uploaded</span>;
-  
-  const url = path.startsWith('http') 
-    ? path 
-    : supabase.storage.from('kyc-documents').getPublicUrl(path).data.publicUrl;
-
+  const url = path.startsWith('http') ? path : supabase.storage.from('kyc-documents').getPublicUrl(path).data.publicUrl;
   return (
     <a href={url} target="_blank" rel="noopener noreferrer" className="text-[#4338CA] hover:underline flex items-center gap-1 text-sm font-medium w-fit">
       <FileText className="h-3.5 w-3.5" /> {label} <ExternalLink className="h-3 w-3 opacity-70" />
@@ -35,12 +32,8 @@ function PublicFileLink({ path, label = "View Document" }: { path: string | null
   );
 }
 
-// Helper Component: Instantly resolves public profile photos
 function PublicAvatar({ path, fallback }: { path: string | null, fallback: string }) {
-  const url = path 
-    ? (path.startsWith('http') ? path : supabase.storage.from('kyc-documents').getPublicUrl(path).data.publicUrl)
-    : '';
-
+  const url = path ? (path.startsWith('http') ? path : supabase.storage.from('kyc-documents').getPublicUrl(path).data.publicUrl) : '';
   return (
     <Avatar className="h-16 w-16 border-2 border-primary/20 shadow-sm">
       {url ? <AvatarImage src={url} className="object-cover" /> : null}
@@ -59,6 +52,12 @@ export function UserRoleManagement() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [visibleCount, setVisibleCount] = useState<number>(50);
 
+  // Advanced Filter States
+  const [filterState, setFilterState] = useState<string>('all');
+  const [filterCity, setFilterCity] = useState<string>('all');
+  const [filterQualification, setFilterQualification] = useState<string>('all');
+  const [filterExperience, setFilterExperience] = useState<string>('');
+
   // Bulk Email States
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
@@ -66,17 +65,14 @@ export function UserRoleManagement() {
   const [emailBody, setEmailBody] = useState('');
   const [isSendingEmail, setIsSendingEmail] = useState(false);
 
-  // Reset pagination when tab or search changes
   useEffect(() => {
     setVisibleCount(50);
-  }, [activeTab, searchQuery]);
+  }, [activeTab, searchQuery, filterState, filterCity, filterQualification, filterExperience]);
 
-  // Clear selections ONLY when changing main tabs, NOT when searching!
   useEffect(() => {
     setSelectedUserIds(new Set()); 
   }, [activeTab]);
 
-  // Fetch only lightweight profile data in bulk for extreme performance
   const { data: allUsers = [], isLoading } = useQuery({
     queryKey: ['admin-users-directory'],
     queryFn: async () => {
@@ -86,16 +82,12 @@ export function UserRoleManagement() {
         supabase.from('user_roles').select('*')
       ]);
 
-      if (profilesRes.error) {
-        toast.error('Failed to load users: ' + profilesRes.error.message);
-        throw profilesRes.error;
-      }
+      if (profilesRes.error) throw profilesRes.error;
 
       const profiles = profilesRes.data || [];
       const auditorProfiles = audProfilesRes.data || [];
       const userRoles = rolesRes.data || [];
 
-      // Map and Categorize Users
       const mappedUsers = profiles.map(profile => {
         const roleRecord = userRoles.find(r => r.user_id === profile.id);
         const audRecord = auditorProfiles.find(a => a.user_id === profile.id);
@@ -104,11 +96,8 @@ export function UserRoleManagement() {
         const isBankApproved = audRecord?.bank_status === 'approved';
 
         let category = 'unverified';
-        if (isProfileApproved && isBankApproved) {
-            category = 'fully_verified';
-        } else if (isProfileApproved && !isBankApproved) {
-            category = 'profile_verified';
-        }
+        if (isProfileApproved && isBankApproved) category = 'fully_verified';
+        else if (isProfileApproved && !isBankApproved) category = 'profile_verified';
 
         let profileData = {
           profile_photo_url: audRecord?.profile_photo_url || null,
@@ -154,6 +143,27 @@ export function UserRoleManagement() {
     staleTime: 1000 * 60 * 5,
   });
 
+  // Dynamically extract unique options for filters
+  const filterOptions = useMemo(() => {
+    const states = new Set<string>();
+    const cities = new Set<string>();
+    const qualifications = new Set<string>();
+
+    allUsers.forEach(u => {
+      if (u.base_state) states.add(u.base_state);
+      if (u.base_city) cities.add(u.base_city);
+      if (u.qualifications && Array.isArray(u.qualifications)) {
+        u.qualifications.forEach((q: string) => qualifications.add(q));
+      }
+    });
+
+    return {
+      states: Array.from(states).sort(),
+      cities: Array.from(cities).sort(),
+      qualifications: Array.from(qualifications).sort()
+    };
+  }, [allUsers]);
+
   const handleViewProfile = async (user: any) => {
     setSelectedUser(user);
     setSelectedUserBank(null); 
@@ -167,14 +177,9 @@ export function UserRoleManagement() {
         .maybeSingle();
 
       if (error) throw error;
-
-      if (data) {
-        setSelectedUserBank(data);
-      } else if (user.pending_bank_data && Object.keys(user.pending_bank_data).length > 0) {
-        setSelectedUserBank(user.pending_bank_data);
-      } else {
-        setSelectedUserBank(null);
-      }
+      if (data) setSelectedUserBank(data);
+      else if (user.pending_bank_data && Object.keys(user.pending_bank_data).length > 0) setSelectedUserBank(user.pending_bank_data);
+      else setSelectedUserBank(null);
     } catch (err: any) {
       toast.error('Failed to load secure bank details: ' + err.message);
     } finally {
@@ -182,6 +187,7 @@ export function UserRoleManagement() {
     }
   };
 
+  // --- APPLY FILTERS LOGIC ---
   const filteredUsers = allUsers
     .filter(u => activeTab === 'all' || u.category === activeTab)
     .filter(u => {
@@ -192,11 +198,27 @@ export function UserRoleManagement() {
         u.email?.toLowerCase().includes(q) ||
         u.phone?.includes(q)
       );
-    });
+    })
+    .filter(u => filterState === 'all' || u.base_state === filterState)
+    .filter(u => filterCity === 'all' || u.base_city === filterCity)
+    .filter(u => filterQualification === 'all' || (u.qualifications && u.qualifications.includes(filterQualification)))
+    .filter(u => !filterExperience || (u.experience_years && u.experience_years >= parseInt(filterExperience)));
 
   const displayedUsers = filteredUsers.slice(0, visibleCount);
 
-  // --- SELECTION LOGIC ---
+  // Count active filters for the badge
+  const activeFilterCount = (filterState !== 'all' ? 1 : 0) + 
+                            (filterCity !== 'all' ? 1 : 0) + 
+                            (filterQualification !== 'all' ? 1 : 0) + 
+                            (filterExperience !== '' ? 1 : 0);
+
+  const clearFilters = () => {
+    setFilterState('all');
+    setFilterCity('all');
+    setFilterQualification('all');
+    setFilterExperience('');
+  };
+
   const toggleUserSelection = (userId: string) => {
     setSelectedUserIds(prev => {
       const newSet = new Set(prev);
@@ -209,31 +231,20 @@ export function UserRoleManagement() {
   const toggleSelectAll = () => {
     const displayedIds = displayedUsers.map(u => u.id);
     const allDisplayedSelected = displayedIds.every(id => selectedUserIds.has(id));
-
     setSelectedUserIds(prev => {
       const newSet = new Set(prev);
-      if (allDisplayedSelected) {
-        // If all currently visible are selected, unselect them
-        displayedIds.forEach(id => newSet.delete(id));
-      } else {
-        // Otherwise, add all currently visible to the selection
-        displayedIds.forEach(id => newSet.add(id));
-      }
+      if (allDisplayedSelected) displayedIds.forEach(id => newSet.delete(id));
+      else displayedIds.forEach(id => newSet.add(id));
       return newSet;
     });
   };
 
-  // --- EMAIL SENDING LOGIC (SUPABASE EDGE FUNCTIONS) ---
   const handleSendEmail = async () => {
     if (!emailSubject.trim() || !emailBody.trim()) {
       toast.error("Subject and message are required.");
       return;
     }
-
-    const recipientEmails = allUsers
-      .filter(u => selectedUserIds.has(u.id) && u.email)
-      .map(u => u.email);
-
+    const recipientEmails = allUsers.filter(u => selectedUserIds.has(u.id) && u.email).map(u => u.email);
     if (recipientEmails.length === 0) {
       toast.error("None of the selected users have a valid email address.");
       return;
@@ -243,24 +254,17 @@ export function UserRoleManagement() {
     const toastId = toast.loading(`Sending email to ${recipientEmails.length} users...`);
 
     try {
-      const { data, error } = await supabase.functions.invoke('send-email', {
-        body: {
-          to: recipientEmails,
-          subject: emailSubject,
-          body: emailBody
-        }
+      const { error } = await supabase.functions.invoke('send-email', {
+        body: { to: recipientEmails, subject: emailSubject, body: emailBody }
       });
-
       if (error) throw error;
-
       toast.success("Emails sent successfully!", { id: toastId });
       setEmailDialogOpen(false);
       setEmailSubject('');
       setEmailBody('');
-      setSelectedUserIds(new Set()); // Reset selections after sending
+      setSelectedUserIds(new Set());
     } catch (error: any) {
       toast.error(`Failed to send emails: ${error.message}`, { id: toastId });
-      console.error("Email Error:", error);
     } finally {
       setIsSendingEmail(false);
     }
@@ -270,72 +274,48 @@ export function UserRoleManagement() {
   const lastUserElementRef = useCallback((node: HTMLDivElement) => {
     if (isLoading) return;
     if (observer.current) observer.current.disconnect();
-    
     observer.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && visibleCount < filteredUsers.length) {
         setVisibleCount(prev => prev + 50);
       }
     });
-    
     if (node) observer.current.observe(node);
   }, [isLoading, visibleCount, filteredUsers.length]);
 
   const getCategoryBadge = (category: string) => {
     switch (category) {
-      case 'fully_verified':
-        return <Badge className="bg-green-600 hover:bg-green-600 text-white border-none px-2.5 py-0.5"><CheckCircle2 className="h-3.5 w-3.5 mr-1"/> Fully Verified</Badge>;
-      case 'profile_verified':
-        return <Badge className="bg-blue-600 hover:bg-blue-600 text-white border-none px-2.5 py-0.5"><User className="h-3.5 w-3.5 mr-1"/> Profile Verified</Badge>;
-      case 'unverified':
-      default:
-        return <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-300 px-2.5 py-0.5"><ShieldAlert className="h-3.5 w-3.5 mr-1"/> OTP / Unverified</Badge>;
+      case 'fully_verified': return <Badge className="bg-green-600 hover:bg-green-600 text-white border-none px-2.5 py-0.5"><CheckCircle2 className="h-3.5 w-3.5 mr-1"/> Fully Verified</Badge>;
+      case 'profile_verified': return <Badge className="bg-blue-600 hover:bg-blue-600 text-white border-none px-2.5 py-0.5"><User className="h-3.5 w-3.5 mr-1"/> Profile Verified</Badge>;
+      default: return <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-300 px-2.5 py-0.5"><ShieldAlert className="h-3.5 w-3.5 mr-1"/> OTP / Unverified</Badge>;
     }
   };
 
   const getStatusBadge = (status: string | undefined | null) => {
     switch (status) {
-      case 'approved':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-none px-2 py-0.5">Approved</Badge>;
-      case 'pending':
-        return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-none px-2 py-0.5">Pending</Badge>;
-      case 'rejected':
-        return <Badge variant="destructive" className="px-2 py-0.5">Rejected</Badge>;
-      default:
-        return <Badge variant="outline" className="text-gray-500 px-2 py-0.5">Unverified</Badge>;
+      case 'approved': return <Badge className="bg-green-100 text-green-800 hover:bg-green-100 border-none px-2 py-0.5">Approved</Badge>;
+      case 'pending': return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-none px-2 py-0.5">Pending</Badge>;
+      case 'rejected': return <Badge variant="destructive" className="px-2 py-0.5">Rejected</Badge>;
+      default: return <Badge variant="outline" className="text-gray-500 px-2 py-0.5">Unverified</Badge>;
     }
   };
 
   return (
     <>
-      {/* FLOATING ACTION BAR FOR BULK EMAIL */}
       {selectedUserIds.size > 0 && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300 flex items-center gap-4 bg-white/95 backdrop-blur-md px-6 py-4 rounded-full shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-gray-200">
           <div className="flex items-center gap-2 border-r border-gray-200 pr-4">
             <Badge className="bg-[#4338CA] text-white hover:bg-[#4338CA] text-sm px-2.5">{selectedUserIds.size}</Badge>
             <span className="font-semibold text-sm text-gray-700">Selected</span>
           </div>
-          
-          <Button 
-            onClick={() => setEmailDialogOpen(true)}
-            className="bg-[#4338CA] hover:bg-[#4338CA]/90 text-white shadow-sm rounded-full px-6"
-          >
-            <Mail className="h-4 w-4 mr-2" />
-            Compose Email
+          <Button onClick={() => setEmailDialogOpen(true)} className="bg-[#4338CA] hover:bg-[#4338CA]/90 text-white shadow-sm rounded-full px-6">
+            <Mail className="h-4 w-4 mr-2" /> Compose Email
           </Button>
-          
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="rounded-full text-muted-foreground hover:bg-gray-100 h-8 w-8 p-0 ml-1"
-            onClick={() => setSelectedUserIds(new Set())}
-            title="Clear Selection"
-          >
+          <Button variant="ghost" size="sm" className="rounded-full text-muted-foreground hover:bg-gray-100 h-8 w-8 p-0 ml-1" onClick={() => setSelectedUserIds(new Set())} title="Clear Selection">
             <X className="h-4 w-4" />
           </Button>
         </div>
       )}
 
-      {/* FILTER TABS */}
       <Tabs defaultValue="all" onValueChange={setActiveTab} className="mb-6">
         <TabsList className="grid w-full sm:max-w-[700px] grid-cols-4 h-12 shadow-sm">
           <TabsTrigger value="all" className="text-sm font-medium">All Auditors</TabsTrigger>
@@ -360,9 +340,8 @@ export function UserRoleManagement() {
               </div>
             </div>
             
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              {/* OPTIMIZED SEARCH BAR */}
-              <div className="relative w-full md:w-64">
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+              <div className="relative w-full sm:w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search auditors..."
@@ -371,6 +350,78 @@ export function UserRoleManagement() {
                   className="pl-9 bg-white shadow-sm border-muted-foreground/20"
                 />
               </div>
+
+              {/* ADVANCED FILTER POPOVER */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full sm:w-auto bg-white shadow-sm relative">
+                    <Filter className="h-4 w-4 mr-2" /> Filters
+                    {activeFilterCount > 0 && (
+                      <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#4338CA] text-[10px] font-bold text-white">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-4" align="end">
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <h4 className="font-semibold text-sm">Advanced Filters</h4>
+                      {activeFilterCount > 0 && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 px-2 text-xs text-muted-foreground hover:text-foreground">
+                          Clear all
+                        </Button>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label className="text-xs">State</Label>
+                      <Select value={filterState} onValueChange={setFilterState}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Any State" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Any State</SelectItem>
+                          {filterOptions.states.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs">City</Label>
+                      <Select value={filterCity} onValueChange={setFilterCity}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Any City" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Any City</SelectItem>
+                          {filterOptions.cities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs">Qualification</Label>
+                      <Select value={filterQualification} onValueChange={setFilterQualification}>
+                        <SelectTrigger className="h-8"><SelectValue placeholder="Any Qualification" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Any Qualification</SelectItem>
+                          {filterOptions.qualifications.map(q => <SelectItem key={q} value={q}>{q}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs">Min. Experience (Years)</Label>
+                      <Input 
+                        type="number" 
+                        min="0"
+                        className="h-8"
+                        placeholder="e.g. 3" 
+                        value={filterExperience} 
+                        onChange={(e) => setFilterExperience(e.target.value)} 
+                      />
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+
             </div>
           </div>
         </CardHeader>
@@ -389,11 +440,7 @@ export function UserRoleManagement() {
               <TableHeader>
                 <TableRow className="bg-muted/30">
                   <TableHead className="w-12 text-center">
-                    <Checkbox 
-                      checked={displayedUsers.length > 0 && displayedUsers.every(u => selectedUserIds.has(u.id))}
-                      onCheckedChange={toggleSelectAll}
-                      aria-label="Select all visible users"
-                    />
+                    <Checkbox checked={displayedUsers.length > 0 && displayedUsers.every(u => selectedUserIds.has(u.id))} onCheckedChange={toggleSelectAll} />
                   </TableHead>
                   <TableHead>Auditor Details</TableHead>
                   <TableHead>Category</TableHead>
@@ -405,11 +452,7 @@ export function UserRoleManagement() {
                 {displayedUsers.map((user: any) => (
                   <TableRow key={user.id} className={`hover:bg-muted/10 transition-colors ${selectedUserIds.has(user.id) ? 'bg-primary/5' : ''}`}>
                     <TableCell className="text-center">
-                      <Checkbox 
-                        checked={selectedUserIds.has(user.id)}
-                        onCheckedChange={() => toggleUserSelection(user.id)}
-                        aria-label={`Select ${user.full_name}`}
-                      />
+                      <Checkbox checked={selectedUserIds.has(user.id)} onCheckedChange={() => toggleUserSelection(user.id)} />
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-3">
@@ -425,9 +468,7 @@ export function UserRoleManagement() {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      {getCategoryBadge(user.category)}
-                    </TableCell>
+                    <TableCell>{getCategoryBadge(user.category)}</TableCell>
                     <TableCell>
                        <div className="flex flex-col gap-1.5 w-fit">
                           <div className="flex items-center justify-between gap-4 text-xs">
@@ -439,25 +480,18 @@ export function UserRoleManagement() {
                        </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => handleViewProfile(user)}
-                        className="text-primary border-primary/20 hover:bg-primary/5"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => handleViewProfile(user)} className="text-primary border-primary/20 hover:bg-primary/5">
                         <Eye className="h-4 w-4 mr-1.5" /> View Profile
                       </Button>
                     </TableCell>
                   </TableRow>
                 ))}
                 
-                {/* INFINITE SCROLL TRIGGER ROW */}
                 {visibleCount < filteredUsers.length && (
                   <TableRow>
                     <TableCell colSpan={5} className="h-16 text-center">
                       <div ref={lastUserElementRef} className="flex items-center justify-center text-muted-foreground text-sm">
-                        <Loader2 className="h-4 w-4 animate-spin mr-2 text-primary" />
-                        Loading more auditors...
+                        <Loader2 className="h-4 w-4 animate-spin mr-2 text-primary" /> Loading more auditors...
                       </div>
                     </TableCell>
                   </TableRow>
@@ -472,37 +506,19 @@ export function UserRoleManagement() {
       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-[#4338CA]" />
-              Compose Email Broadcast
-            </DialogTitle>
-            <DialogDescription>
-              Sending an email to <span className="font-bold text-foreground">{selectedUserIds.size}</span> selected users via Supabase Edge Functions.
-            </DialogDescription>
+            <DialogTitle className="flex items-center gap-2"><Mail className="h-5 w-5 text-[#4338CA]" /> Compose Email Broadcast</DialogTitle>
+            <DialogDescription>Sending an email to <span className="font-bold text-foreground">{selectedUserIds.size}</span> selected users via Supabase Edge Functions.</DialogDescription>
           </DialogHeader>
-          
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label className="font-semibold text-gray-700">Subject</Label>
-              <Input 
-                placeholder="Important: Update regarding your Audit Profile" 
-                value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
-                disabled={isSendingEmail}
-              />
+              <Input placeholder="Important: Update regarding your Audit Profile" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} disabled={isSendingEmail} />
             </div>
             <div className="space-y-2">
               <Label className="font-semibold text-gray-700">Message Body</Label>
-              <Textarea 
-                placeholder="Write your message here..." 
-                className="min-h-[200px]"
-                value={emailBody}
-                onChange={(e) => setEmailBody(e.target.value)}
-                disabled={isSendingEmail}
-              />
+              <Textarea placeholder="Write your message here..." className="min-h-[200px]" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} disabled={isSendingEmail} />
             </div>
           </div>
-          
           <DialogFooter className="bg-muted/10 -mx-6 -mb-6 px-6 py-4 border-t flex justify-end gap-2">
             <Button variant="outline" onClick={() => setEmailDialogOpen(false)} disabled={isSendingEmail}>Cancel</Button>
             <Button onClick={handleSendEmail} className="bg-[#4338CA] hover:bg-[#4338CA]/90" disabled={isSendingEmail}>
@@ -517,24 +533,13 @@ export function UserRoleManagement() {
       <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-2xl flex items-center gap-2">
-              <User className="h-6 w-6 text-primary" />
-              Auditor Profile View
-            </DialogTitle>
-            <DialogDescription>
-              Complete details and verification status for {selectedUser?.full_name || 'this user'}.
-            </DialogDescription>
+            <DialogTitle className="text-2xl flex items-center gap-2"><User className="h-6 w-6 text-primary" /> Auditor Profile View</DialogTitle>
+            <DialogDescription>Complete details and verification status for {selectedUser?.full_name || 'this user'}.</DialogDescription>
           </DialogHeader>
-
           {selectedUser && (
             <div className="space-y-6 py-2">
-              
-              {/* Top Profile Banner */}
               <div className="flex flex-col sm:flex-row gap-5 p-5 bg-muted/10 rounded-xl border items-start sm:items-center">
-                <PublicAvatar 
-                  path={selectedUser.profile_photo_url} 
-                  fallback={selectedUser.full_name?.charAt(0).toUpperCase() || 'U'} 
-                />
+                <PublicAvatar path={selectedUser.profile_photo_url} fallback={selectedUser.full_name?.charAt(0).toUpperCase() || 'U'} />
                 <div className="flex-1 space-y-1">
                   <div className="flex items-center gap-3">
                      <h3 className="font-bold text-xl">{selectedUser.full_name || 'Unknown Name'}</h3>
@@ -560,99 +565,52 @@ export function UserRoleManagement() {
                  </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
-                  {/* LOCATION & CONTACT */}
                   <div className="space-y-4">
-                    <h4 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
-                      <MapPin className="h-5 w-5 text-primary" /> Location & Contact
-                    </h4>
+                    <h4 className="font-semibold text-lg border-b pb-2 flex items-center gap-2"><MapPin className="h-5 w-5 text-primary" /> Location & Contact</h4>
                     <div className="space-y-3 bg-muted/5 p-4 rounded-xl border text-sm">
-                      <div>
-                        <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Full Address</span>
-                        <span className="font-medium">{selectedUser.address || 'Not provided'}</span>
-                      </div>
+                      <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Full Address</span><span className="font-medium">{selectedUser.address || 'Not provided'}</span></div>
                       <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Base Location</span>
-                          <span className="font-medium">{selectedUser.base_city || 'N/A'}, {selectedUser.base_state || 'N/A'}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Travel Radius</span>
-                          <span className="font-medium">{selectedUser.willing_to_travel_radius ? `${selectedUser.willing_to_travel_radius} KM` : 'N/A'}</span>
-                        </div>
+                        <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Base Location</span><span className="font-medium">{selectedUser.base_city || 'N/A'}, {selectedUser.base_state || 'N/A'}</span></div>
+                        <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Travel Radius</span><span className="font-medium">{selectedUser.willing_to_travel_radius ? `${selectedUser.willing_to_travel_radius} KM` : 'N/A'}</span></div>
                       </div>
                       <div>
                         <span className="text-muted-foreground block mb-1 text-xs uppercase tracking-wider font-semibold">Preferred States/Cities</span>
                         <div className="flex flex-wrap gap-1">
                           {selectedUser.preferred_states?.length > 0 || selectedUser.preferred_cities?.length > 0 ? (
-                            <>
-                              {selectedUser.preferred_states?.map((s: string) => <Badge key={s} variant="secondary" className="font-normal">{s}</Badge>)}
-                              {selectedUser.preferred_cities?.map((c: string) => <Badge key={c} variant="outline" className="font-normal">{c}</Badge>)}
-                            </>
-                          ) : (
-                            <span className="italic text-muted-foreground">None specified</span>
-                          )}
+                            <>{selectedUser.preferred_states?.map((s: string) => <Badge key={s} variant="secondary" className="font-normal">{s}</Badge>)}
+                               {selectedUser.preferred_cities?.map((c: string) => <Badge key={c} variant="outline" className="font-normal">{c}</Badge>)}</>
+                          ) : <span className="italic text-muted-foreground">None specified</span>}
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* PROFESSIONAL DETAILS */}
                   <div className="space-y-4">
-                    <h4 className="font-semibold text-lg border-b pb-2 flex items-center gap-2">
-                      <Briefcase className="h-5 w-5 text-primary" /> Professional Background
-                    </h4>
+                    <h4 className="font-semibold text-lg border-b pb-2 flex items-center gap-2"><Briefcase className="h-5 w-5 text-primary" /> Professional Background</h4>
                     <div className="space-y-3 bg-muted/5 p-4 rounded-xl border text-sm">
                       <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Experience</span>
-                          <span className="font-medium">{selectedUser.experience_years ? `${selectedUser.experience_years} Years` : '0 Years'}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">GST Number</span>
-                          <span className="font-medium uppercase">{selectedUser.gst_number || 'N/A'}</span>
-                        </div>
+                        <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Experience</span><span className="font-medium">{selectedUser.experience_years ? `${selectedUser.experience_years} Years` : '0 Years'}</span></div>
+                        <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">GST Number</span><span className="font-medium uppercase">{selectedUser.gst_number || 'N/A'}</span></div>
                       </div>
-                      
-                      <div>
-                        <span className="text-muted-foreground block mb-1 text-xs uppercase tracking-wider font-semibold">Core Competency</span>
-                        <span className="font-medium text-primary">{selectedUser.core_competency || 'Not specified'}</span>
-                      </div>
-
+                      <div><span className="text-muted-foreground block mb-1 text-xs uppercase tracking-wider font-semibold">Core Competency</span><span className="font-medium text-primary">{selectedUser.core_competency || 'Not specified'}</span></div>
                       <div>
                         <span className="text-muted-foreground block mb-1 text-xs uppercase tracking-wider font-semibold">Qualifications</span>
                         <div className="flex flex-wrap gap-1">
-                          {selectedUser.qualifications?.length > 0 ? (
-                            selectedUser.qualifications.map((q: string) => <Badge key={q} className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none font-medium">{q}</Badge>)
-                          ) : (
-                            <span className="italic text-muted-foreground">None specified</span>
-                          )}
+                          {selectedUser.qualifications?.length > 0 ? selectedUser.qualifications.map((q: string) => <Badge key={q} className="bg-blue-100 text-blue-800 hover:bg-blue-100 border-none font-medium">{q}</Badge>) : <span className="italic text-muted-foreground">None specified</span>}
                         </div>
                       </div>
-
                       <div className="pt-2 border-t mt-2 flex justify-between items-center">
-                        <div>
-                          <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Manpower / Team</span>
-                          <span className="font-medium">
-                            {selectedUser.has_manpower ? `Yes (${selectedUser.manpower_count} people)` : 'No additional team'}
-                          </span>
-                        </div>
+                        <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Manpower / Team</span><span className="font-medium">{selectedUser.has_manpower ? `Yes (${selectedUser.manpower_count} people)` : 'No additional team'}</span></div>
                         <PublicFileLink path={selectedUser.resume_url} label="View Resume" />
                       </div>
                     </div>
                   </div>
 
-                  {/* BANK & IDENTITY DETAILS */}
                   <div className="col-span-1 md:col-span-2 space-y-4 mt-2">
                     <div className="flex items-center justify-between border-b pb-2">
-                      <h4 className="font-semibold text-lg flex items-center gap-2">
-                        <Landmark className="h-5 w-5 text-primary" /> Bank & Identity Verification
-                      </h4>
-                      {selectedUser.bank_status === 'pending' && selectedUserBank && (
-                         <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">Viewing Draft Data</Badge>
-                      )}
+                      <h4 className="font-semibold text-lg flex items-center gap-2"><Landmark className="h-5 w-5 text-primary" /> Bank & Identity Verification</h4>
+                      {selectedUser.bank_status === 'pending' && selectedUserBank && <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300">Viewing Draft Data</Badge>}
                     </div>
-                    
                     {isLoadingBank ? (
                       <div className="bg-muted/5 p-12 rounded-xl border flex flex-col items-center justify-center text-muted-foreground">
                         <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
@@ -661,41 +619,16 @@ export function UserRoleManagement() {
                     ) : selectedUserBank ? (
                       <div className="bg-muted/5 p-4 rounded-xl border space-y-4">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Account Number</span>
-                            <span className="font-medium">{selectedUserBank.bank_account_no || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">IFSC Code</span>
-                            <span className="font-medium uppercase">{selectedUserBank.ifsc_code || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">PAN Number</span>
-                            <span className="font-medium uppercase">{selectedUserBank.pan_number || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Aadhaar Number</span>
-                            <span className="font-medium">{selectedUserBank.aadhaar_number || 'N/A'}</span>
-                          </div>
+                          <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Account Number</span><span className="font-medium">{selectedUserBank.bank_account_no || 'N/A'}</span></div>
+                          <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">IFSC Code</span><span className="font-medium uppercase">{selectedUserBank.ifsc_code || 'N/A'}</span></div>
+                          <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">PAN Number</span><span className="font-medium uppercase">{selectedUserBank.pan_number || 'N/A'}</span></div>
+                          <div><span className="text-muted-foreground block mb-0.5 text-xs uppercase tracking-wider font-semibold">Aadhaar Number</span><span className="font-medium">{selectedUserBank.aadhaar_number || 'N/A'}</span></div>
                         </div>
-
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 border-t">
-                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center">
-                            <span className="text-xs font-semibold mb-2">PAN Card</span>
-                            <PublicFileLink path={selectedUserBank.pan_card_url} label="View PDF/IMG" />
-                          </div>
-                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center">
-                            <span className="text-xs font-semibold mb-2">Aadhaar Front</span>
-                            <PublicFileLink path={selectedUserBank.aadhaar_front_url} label="View PDF/IMG" />
-                          </div>
-                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center">
-                            <span className="text-xs font-semibold mb-2">Aadhaar Back</span>
-                            <PublicFileLink path={selectedUserBank.aadhaar_back_url} label="View PDF/IMG" />
-                          </div>
-                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center">
-                            <span className="text-xs font-semibold mb-2">Cancelled Cheque</span>
-                            <PublicFileLink path={selectedUserBank.cancelled_cheque_url} label="View PDF/IMG" />
-                          </div>
+                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center"><span className="text-xs font-semibold mb-2">PAN Card</span><PublicFileLink path={selectedUserBank.pan_card_url} label="View PDF/IMG" /></div>
+                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center"><span className="text-xs font-semibold mb-2">Aadhaar Front</span><PublicFileLink path={selectedUserBank.aadhaar_front_url} label="View PDF/IMG" /></div>
+                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center"><span className="text-xs font-semibold mb-2">Aadhaar Back</span><PublicFileLink path={selectedUserBank.aadhaar_back_url} label="View PDF/IMG" /></div>
+                          <div className="p-3 bg-white border rounded-lg shadow-sm flex flex-col items-center justify-center text-center"><span className="text-xs font-semibold mb-2">Cancelled Cheque</span><PublicFileLink path={selectedUserBank.cancelled_cheque_url} label="View PDF/IMG" /></div>
                         </div>
                       </div>
                     ) : (
@@ -705,17 +638,13 @@ export function UserRoleManagement() {
                       </div>
                     )}
                   </div>
-
                 </div>
               )}
             </div>
           )}
-          
           <Separator className="my-2" />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedUser(null)}>
-              Close Profile View
-            </Button>
+            <Button variant="outline" onClick={() => setSelectedUser(null)}>Close Profile View</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
