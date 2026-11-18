@@ -7,6 +7,8 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.5"
   }
@@ -19,7 +21,6 @@ export type Database = {
           auditor_id: string
           id: string
           status: string | null
-          interest_reason: string | null
         }
         Insert: {
           applied_at?: string | null
@@ -27,7 +28,6 @@ export type Database = {
           auditor_id: string
           id?: string
           status?: string | null
-          interest_reason?: string | null
         }
         Update: {
           applied_at?: string | null
@@ -35,7 +35,6 @@ export type Database = {
           auditor_id?: string
           id?: string
           status?: string | null
-          interest_reason?: string | null
         }
         Relationships: [
           {
@@ -226,13 +225,6 @@ export type Database = {
           state: string
           status: string | null
           updated_at: string | null
-          applicant_count: number | null
-          industry: string | null
-          qualification_required: string | null
-          duration: string | null
-          laptop_required: boolean | null
-          reimbursement: string | null
-          additional_info: string | null
         }
         Insert: {
           address: string
@@ -267,13 +259,6 @@ export type Database = {
           state: string
           status?: string | null
           updated_at?: string | null
-          applicant_count?: number | null
-          industry?: string | null
-          qualification_required?: string | null
-          duration?: string | null
-          laptop_required?: boolean | null
-          reimbursement?: string | null
-          additional_info?: string | null
         }
         Update: {
           address?: string
@@ -308,13 +293,6 @@ export type Database = {
           state?: string
           status?: string | null
           updated_at?: string | null
-          applicant_count?: number | null
-          industry?: string | null
-          qualification_required?: string | null
-          duration?: string | null
-          laptop_required?: boolean | null
-          reimbursement?: string | null
-          additional_info?: string | null
         }
         Relationships: [
           {
@@ -335,22 +313,16 @@ export type Database = {
       }
       auditor_profiles: {
         Row: {
-          address: string | null
           base_city: string | null
           base_state: string | null
-          competencies: string[] | null
-          core_competency: string | null
           created_at: string | null
           experience_years: number | null
           gst_number: string | null
-          has_manpower: boolean | null
           id: string
           kyc_status: string | null
-          manpower_count: number | null
           pan_card: string | null
           preferred_cities: string[] | null
           preferred_states: string[] | null
-          profile_photo_url: string | null
           qualifications: string[] | null
           rating: number | null
           rejection_reason: string | null
@@ -360,22 +332,16 @@ export type Database = {
           willing_to_travel_radius: number | null
         }
         Insert: {
-          address?: string | null
           base_city?: string | null
           base_state?: string | null
-          competencies?: string[] | null
-          core_competency?: string | null
           created_at?: string | null
           experience_years?: number | null
           gst_number?: string | null
-          has_manpower?: boolean | null
           id?: string
           kyc_status?: string | null
-          manpower_count?: number | null
           pan_card?: string | null
           preferred_cities?: string[] | null
           preferred_states?: string[] | null
-          profile_photo_url?: string | null
           qualifications?: string[] | null
           rating?: number | null
           rejection_reason?: string | null
@@ -385,22 +351,16 @@ export type Database = {
           willing_to_travel_radius?: number | null
         }
         Update: {
-          address?: string | null
           base_city?: string | null
           base_state?: string | null
-          competencies?: string[] | null
-          core_competency?: string | null
           created_at?: string | null
           experience_years?: number | null
           gst_number?: string | null
-          has_manpower?: boolean | null
           id?: string
           kyc_status?: string | null
-          manpower_count?: number | null
           pan_card?: string | null
           preferred_cities?: string[] | null
           preferred_states?: string[] | null
-          profile_photo_url?: string | null
           qualifications?: string[] | null
           rating?: number | null
           rejection_reason?: string | null
@@ -412,50 +372,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "auditor_profiles_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      bank_kyc_details: {
-        Row: {
-          aadhaar_back_url: string | null
-          aadhaar_front_url: string | null
-          bank_account_no: string
-          created_at: string
-          id: string
-          ifsc_code: string
-          pan_number: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          aadhaar_back_url?: string | null
-          aadhaar_front_url?: string | null
-          bank_account_no: string
-          created_at?: string
-          id?: string
-          ifsc_code: string
-          pan_number: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          aadhaar_back_url?: string | null
-          aadhaar_front_url?: string | null
-          bank_account_no?: string
-          created_at?: string
-          id?: string
-          ifsc_code?: string
-          pan_number?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "bank_kyc_details_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
             referencedRelation: "profiles"
@@ -650,7 +566,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           id?: string
-          role: Database["public"]["Enums"]["app_role"]
+          role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
         }
         Relationships: [
@@ -827,12 +743,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -856,11 +772,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -881,11 +797,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -906,11 +822,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -923,11 +839,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
